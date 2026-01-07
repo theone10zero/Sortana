@@ -71,6 +71,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const payloadDisplay = document.getElementById('payload-display');
     const diffDisplay = document.getElementById('diff-display');
     const diffContainer = document.getElementById('diff-container');
+    const promptReductionLabel = document.getElementById('prompt-reduction');
 
     let lastFullText = defaults.lastFullText || '';
     let lastPromptText = defaults.lastPromptText || '';
@@ -78,22 +79,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (lastPayload) {
         payloadDisplay.textContent = lastPayload;
-    }
-    if (lastFullText && lastPromptText && diff_match_patch) {
-        const dmp = new diff_match_patch();
-        dmp.Diff_EditCost = 4;
-        const diffs = dmp.diff_main(lastFullText, lastPromptText);
-        dmp.diff_cleanupEfficiency(diffs);
-        const hasDiff = diffs.some(d => d[0] !== 0);
-        if (hasDiff) {
-            diffDisplay.innerHTML = dmp.diff_prettyHtml(diffs);
-            diffContainer.classList.remove('is-hidden');
-        } else {
-            diffDisplay.innerHTML = '';
-            diffContainer.classList.add('is-hidden');
-        }
-    } else {
-        diffContainer.classList.add('is-hidden');
     }
     themeSelect.addEventListener('change', async () => {
         markDirty();
@@ -164,6 +149,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tokenReductionToggle = document.getElementById('token-reduction');
     tokenReductionToggle.checked = defaults.tokenReduction === true;
 
+    function tokenSavingEnabled() {
+        return htmlToggle.checked
+            || stripUrlToggle.checked
+            || altTextToggle.checked
+            || collapseWhitespaceToggle.checked
+            || tokenReductionToggle.checked;
+    }
+
+    function updatePromptReductionLabel(hasDiff) {
+        if (!promptReductionLabel) return;
+        if (!hasDiff || !tokenSavingEnabled() || !lastFullText || !lastPromptText) {
+            promptReductionLabel.classList.add('is-hidden');
+            return;
+        }
+        const baseLength = lastFullText.length;
+        const promptLength = lastPromptText.length;
+        const percentSaved = baseLength > 0
+            ? Math.max(0, Math.round((1 - (promptLength / baseLength)) * 100))
+            : 0;
+        promptReductionLabel.textContent = `Prompt Token Reduction: ${percentSaved}%`;
+        promptReductionLabel.classList.remove('is-hidden');
+    }
+
+    function updateDiffDisplay() {
+        if (lastFullText && lastPromptText && diff_match_patch) {
+            const dmp = new diff_match_patch();
+            dmp.Diff_EditCost = 4;
+            const diffs = dmp.diff_main(lastFullText, lastPromptText);
+            dmp.diff_cleanupEfficiency(diffs);
+            const hasDiff = diffs.some(d => d[0] !== 0);
+            if (hasDiff) {
+                diffDisplay.innerHTML = dmp.diff_prettyHtml(diffs);
+                diffContainer.classList.remove('is-hidden');
+            } else {
+                diffDisplay.innerHTML = '';
+                diffContainer.classList.add('is-hidden');
+            }
+            updatePromptReductionLabel(hasDiff);
+        } else {
+            diffDisplay.innerHTML = '';
+            diffContainer.classList.add('is-hidden');
+            updatePromptReductionLabel(false);
+        }
+    }
+
     const debugTabToggle = document.getElementById('show-debug-tab');
     const debugTabBtn = document.getElementById('debug-tab-button');
     function updateDebugTab() {
@@ -173,6 +203,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     debugTabToggle.checked = defaults.showDebugTab === true;
     debugTabToggle.addEventListener('change', () => { updateDebugTab(); markDirty(); });
     updateDebugTab();
+
+    updateDiffDisplay();
+
+    [htmlToggle, stripUrlToggle, altTextToggle, collapseWhitespaceToggle, tokenReductionToggle].forEach(toggle => {
+        toggle.addEventListener('change', () => {
+            updatePromptReductionLabel(!diffContainer.classList.contains('is-hidden'));
+        });
+    });
 
 
     const aiParams = Object.assign({}, DEFAULT_AI_PARAMS, defaults.aiParams || {});
@@ -770,23 +808,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (latest.lastFullText !== lastFullText || latest.lastPromptText !== lastPromptText) {
                     lastFullText = latest.lastFullText || '';
                     lastPromptText = latest.lastPromptText || '';
-                    if (lastFullText && lastPromptText && diff_match_patch) {
-                        const dmp = new diff_match_patch();
-                        dmp.Diff_EditCost = 4;
-                        const diffs = dmp.diff_main(lastFullText, lastPromptText);
-                        dmp.diff_cleanupEfficiency(diffs);
-                        const hasDiff = diffs.some(d => d[0] !== 0);
-                        if (hasDiff) {
-                            diffDisplay.innerHTML = dmp.diff_prettyHtml(diffs);
-                            diffContainer.classList.remove('is-hidden');
-                        } else {
-                            diffDisplay.innerHTML = '';
-                            diffContainer.classList.add('is-hidden');
-                        }
-                    } else {
-                        diffDisplay.innerHTML = '';
-                        diffContainer.classList.add('is-hidden');
-                    }
+                    updateDiffDisplay();
                 }
             }
         } catch {}
