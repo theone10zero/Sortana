@@ -12,6 +12,7 @@ This file provides guidelines for codex agents contributing to the Sortana proje
 - `resources/`: Images and other static files.
 - `prompt_templates/`: Prompt template files for the AI service.
 - `build-xpi.ps1`: PowerShell script to package the extension.
+- `build-xpi.sh`: Bash script to package the extension.
 
 ## Coding Style
 

@@ -29,7 +29,7 @@ with JSON indicating whether the message meets a specified criterion.
 - **View reasoning** – inspect why rules matched via the Details popup.
 - **Cache management** – clear cached results from the context menu or options page.
 - **Queue & timing stats** – monitor processing time on the Maintenance tab.
-- **Packaging script** – `build-xpi.ps1` builds an XPI ready for installation.
+- **Packaging scripts** – `build-xpi.ps1` (PowerShell) or `build-xpi.sh` (bash) build an XPI ready for installation.
 - **Maintenance tab** – view rule counts, cache entries and clear cached results from the options page.
 
 ### Cache Storage
@@ -65,8 +65,9 @@ Sortana is implemented entirely with standard WebExtension scripts—no custom e
 1. Ensure PowerShell is available (for Windows) or adapt the script for other
    environments.
 2. The Bulma stylesheet (v1.0.3) is already included as `options/bulma.css`.
-3. Run `powershell ./build-xpi.ps1` from the repository root. The script reads
-   the version from `manifest.json` and creates an XPI in the `release` folder.
+3. Run `powershell ./build-xpi.ps1` or `./build-xpi.sh` from the repository root.
+   The script reads the version from `manifest.json` and creates an XPI in the
+   `release` folder.
 4. Install the generated XPI in Thunderbird via the Add-ons Manager. During
    development you can also load the directory as a temporary add-on.
 5. To regenerate PNG icons from the SVG sources, run `resources/svg2img.ps1`.
