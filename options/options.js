@@ -196,6 +196,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const debugTabToggle = document.getElementById('show-debug-tab');
     const debugTabBtn = document.getElementById('debug-tab-button');
+    const errorTabBtn = document.getElementById('errors-tab-button');
+    const errorsEmpty = document.getElementById('errors-empty');
+    const errorsPanel = document.getElementById('errors-panel');
+    const errorsList = document.getElementById('errors-list');
+    const errorsCount = document.getElementById('errors-count');
     function updateDebugTab() {
         const visible = debugTabToggle.checked;
         debugTabBtn.classList.toggle('is-hidden', !visible);
@@ -203,6 +208,71 @@ document.addEventListener('DOMContentLoaded', async () => {
     debugTabToggle.checked = defaults.showDebugTab === true;
     debugTabToggle.addEventListener('change', () => { updateDebugTab(); markDirty(); });
     updateDebugTab();
+
+    function formatErrorTime(value) {
+        try {
+            return new Date(value).toLocaleString();
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function renderErrors(entries = []) {
+        const hasErrors = entries.length > 0;
+        errorTabBtn.classList.toggle('is-hidden', !hasErrors);
+        errorsEmpty.classList.toggle('is-hidden', hasErrors);
+        errorsPanel.classList.toggle('is-hidden', !hasErrors);
+        errorsList.innerHTML = '';
+        errorsCount.textContent = String(entries.length);
+        if (!hasErrors) {
+            return;
+        }
+        entries.forEach(entry => {
+            const card = document.createElement('article');
+            card.className = 'message is-danger is-light mb-4';
+            const header = document.createElement('div');
+            header.className = 'message-header';
+            const title = document.createElement('p');
+            title.textContent = entry.context || 'Error';
+            const time = document.createElement('span');
+            time.className = 'is-size-7 has-text-weight-normal';
+            time.textContent = formatErrorTime(entry.time);
+            header.appendChild(title);
+            header.appendChild(time);
+            const body = document.createElement('div');
+            body.className = 'message-body';
+            const summary = document.createElement('p');
+            summary.className = 'mb-2';
+            summary.textContent = entry.message || 'Unknown error';
+            body.appendChild(summary);
+            if (entry.detail) {
+                const detail = document.createElement('pre');
+                detail.className = 'is-family-monospace is-size-7';
+                detail.textContent = entry.detail;
+                body.appendChild(detail);
+            }
+            card.appendChild(header);
+            card.appendChild(body);
+            errorsList.appendChild(card);
+        });
+    }
+
+    async function loadErrors() {
+        try {
+            const response = await browser.runtime.sendMessage({ type: 'sortana:getErrorLog' });
+            renderErrors(response?.errors || []);
+        } catch (e) {
+            renderErrors([]);
+        }
+    }
+
+    browser.runtime.onMessage.addListener((msg) => {
+        if (msg?.type === 'sortana:errorLogUpdated') {
+            loadErrors();
+        }
+    });
+
+    await loadErrors();
 
     updateDiffDisplay();
 

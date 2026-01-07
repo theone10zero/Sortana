@@ -51,6 +51,7 @@
                             <li class="is-active" data-tab="settings"><a><span class="icon is-small"><img data-icon="settings" data-size="16" src="../resources/img/settings-light-16.png" alt=""></span><span>Settings</span></a></li>
                             <li data-tab="rules"><a><span class="icon is-small"><img data-icon="clipboarddata" data-size="16" src="../resources/img/clipboarddata-light-16.png" alt=""></span><span>Rules</span></a></li>
                             <li data-tab="maintenance"><a><span class="icon is-small"><img data-icon="gear" data-size="16" src="../resources/img/gear-light-16.png" alt=""></span><span>Maintenance</span></a></li>
+                            <li id="errors-tab-button" class="is-hidden" data-tab="errors"><a><span class="icon is-small"><img data-icon="x" data-size="16" src="../resources/img/x-light-16.png" alt=""></span><span>Errors</span></a></li>
                             <li id="debug-tab-button" class="is-hidden" data-tab="debug"><a><span class="icon is-small"><img data-icon="average" data-size="16" src="../resources/img/average-light-16.png" alt=""></span><span>Debug</span></a></li>
                         </ul>
                     </div>
@@ -282,6 +283,32 @@
                         </button>
                         <input class="is-hidden" type="file" id="import-file" accept="application/json">
                     </p>
+                </div>
+            </div>
+
+            <div id="errors-tab" class="tab-content is-hidden">
+                <h2 class="title is-4">
+                    <span class="icon is-small"><img data-icon="x" data-size="16" src="../resources/img/x-light-16.png" alt=""></span>
+                    <span>Session Errors</span>
+                </h2>
+                <div id="errors-empty" class="notification is-success is-light">
+                    No errors have been recorded since the last start.
+                </div>
+                <div id="errors-panel" class="is-hidden">
+                    <div class="box mb-4">
+                        <div class="level">
+                            <div class="level-left">
+                                <div>
+                                    <p class="title is-5 mb-1">Error Log</p>
+                                    <p class="subtitle is-6">Visible only for this session.</p>
+                                </div>
+                            </div>
+                            <div class="level-right">
+                                <span class="tag is-danger is-light" id="errors-count">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="errors-list"></div>
                 </div>
             </div>
 

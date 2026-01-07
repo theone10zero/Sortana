@@ -24,8 +24,9 @@ with JSON indicating whether the message meets a specified criterion.
 - **Rule enable/disable** – temporarily turn a rule off without removing it.
 - **Account & folder filters** – limit rules to specific accounts or folders.
 - **Context menu** – apply AI rules from the message list or the message display action button.
-- **Status icons** – toolbar icons show when classification is in progress and briefly display success states. If a failure occurs the icon turns red until you dismiss the notification.
-- **Error notification** – failed classification displays a notification with a button to clear the error and reset the icon.
+- **Status icons** – toolbar icons show when classification is in progress and briefly display success states. If a failure occurs the icon turns red briefly before returning to normal.
+- **Error notification** – failed classification displays a notification in Thunderbird.
+- **Session error log** – the Errors tab (visible only when errors occur) shows errors recorded since the last add-on start.
 - **View reasoning** – inspect why rules matched via the Details popup.
 - **Cache management** – clear cached results from the context menu or options page.
 - **Queue & timing stats** – monitor processing time on the Maintenance tab.
@@ -88,7 +89,7 @@ Sortana is implemented entirely with standard WebExtension scripts—no custom e
    open a compose window using the account that received the message.
 3. Save your settings. New mail will be evaluated automatically using the
    configured rules.
-4. If the toolbar icon shows a red X, click the notification's **Dismiss** button to clear the error.
+4. If the toolbar icon shows a red X, it will clear after a few seconds. Open the Errors tab in Options to review the latest failures.
 
 ### Example Filters
 

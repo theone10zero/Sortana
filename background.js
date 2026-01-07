@@ -19,6 +19,7 @@ let queue = Promise.resolve();
 let queuedCount = 0;
 let processing = false;
 let iconTimer = null;
+let errorTimer = null;
 let timingStats = { count: 0, mean: 0, m2: 0, total: 0, last: -1 };
 let currentStart = 0;
 let logGetTiming = true;
@@ -33,8 +34,11 @@ let userTheme = 'auto';
 let currentTheme = 'light';
 let detectSystemTheme;
 let errorPending = false;
+let errorLog = [];
 let showDebugTab = false;
 const ERROR_NOTIFICATION_ID = 'sortana-error';
+const ERROR_ICON_TIMEOUT = 4500;
+const MAX_ERROR_LOG = 50;
 
 function normalizeRules(rules) {
     return Array.isArray(rules) ? rules.map(r => {
@@ -108,9 +112,31 @@ function showTransientIcon(factory, delay = 1500) {
 
 async function clearError() {
     errorPending = false;
-    await storage.local.set({ errorPending: false });
+    clearTimeout(errorTimer);
     await browser.notifications.clear(ERROR_NOTIFICATION_ID);
     updateActionIcon();
+}
+
+function recordError(context, err) {
+    const message = err instanceof Error ? err.message : String(err || 'Unknown error');
+    const detail = err instanceof Error ? err.stack : '';
+    errorLog.unshift({
+        time: Date.now(),
+        context,
+        message,
+        detail
+    });
+    if (errorLog.length > MAX_ERROR_LOG) {
+        errorLog.length = MAX_ERROR_LOG;
+    }
+    errorPending = true;
+    updateActionIcon();
+    clearTimeout(errorTimer);
+    errorTimer = setTimeout(() => {
+        errorPending = false;
+        updateActionIcon();
+    }, ERROR_ICON_TIMEOUT);
+    browser.runtime.sendMessage({ type: 'sortana:errorLogUpdated', count: errorLog.length }).catch(() => {});
 }
 
 function refreshMenuIcons() {
@@ -382,16 +408,14 @@ async function processMessage(id) {
         const elapsed = Date.now() - currentStart;
         currentStart = 0;
         updateTimingStats(elapsed);
-        await storage.local.set({ classifyStats: timingStats, errorPending: true });
-        errorPending = true;
+        await storage.local.set({ classifyStats: timingStats });
         logger.aiLog("failed to apply AI rules", { level: 'error' }, e);
-        setIcon(ICONS.error());
+        recordError("Failed to apply AI rules", e);
         browser.notifications.create(ERROR_NOTIFICATION_ID, {
             type: 'basic',
             iconUrl: browser.runtime.getURL('resources/img/logo.png'),
             title: 'Sortana Error',
-            message: 'Failed to apply AI rules',
-            buttons: [{ title: 'Dismiss' }]
+            message: 'Failed to apply AI rules'
         });
     }
 }
@@ -451,7 +475,7 @@ async function clearCacheForMessages(idsInput) {
     }
 
     try {
-        const store = await storage.local.get(["endpoint", "templateName", "customTemplate", "customSystemPrompt", "aiParams", "debugLogging", "htmlToMarkdown", "stripUrlParams", "altTextImages", "collapseWhitespace", "tokenReduction", "aiRules", "theme", "errorPending", "showDebugTab"]);
+        const store = await storage.local.get(["endpoint", "templateName", "customTemplate", "customSystemPrompt", "aiParams", "debugLogging", "htmlToMarkdown", "stripUrlParams", "altTextImages", "collapseWhitespace", "tokenReduction", "aiRules", "theme", "showDebugTab"]);
         logger.setDebug(store.debugLogging);
         await AiClassifier.setConfig(store);
         userTheme = store.theme || 'auto';
@@ -465,7 +489,6 @@ async function clearCacheForMessages(idsInput) {
         if (store.aiParams && typeof store.aiParams.max_tokens !== 'undefined') {
             maxTokens = parseInt(store.aiParams.max_tokens) || maxTokens;
         }
-        errorPending = store.errorPending === true;
         showDebugTab = store.showDebugTab === true;
         const savedStats = await storage.local.get('classifyStats');
         if (savedStats.classifyStats && typeof savedStats.classifyStats === 'object') {
@@ -523,10 +546,6 @@ async function clearCacheForMessages(idsInput) {
             }
             if (changes.showDebugTab) {
                 showDebugTab = changes.showDebugTab.newValue === true;
-            }
-            if (changes.errorPending) {
-                errorPending = changes.errorPending.newValue === true;
-                updateActionIcon();
             }
             if (changes.theme) {
                 userTheme = changes.theme.newValue || 'auto';
@@ -720,6 +739,8 @@ async function clearCacheForMessages(idsInput) {
             }
         } else if (msg?.type === "sortana:getQueueCount") {
             return { count: queuedCount + (processing ? 1 : 0) };
+        } else if (msg?.type === "sortana:getErrorLog") {
+            return { errors: errorLog.slice() };
         } else if (msg?.type === "sortana:getTiming") {
             const t = timingStats;
             const std = t.count > 1 ? Math.sqrt(t.m2 / (t.count - 1)) : 0;
@@ -751,6 +772,7 @@ async function clearCacheForMessages(idsInput) {
     // Catch any unhandled rejections
     window.addEventListener("unhandledrejection", ev => {
         logger.aiLog("Unhandled promise rejection", { level: 'error' }, ev.reason);
+        recordError("Unhandled promise rejection", ev.reason);
     });
 
     browser.notifications.onClicked.addListener(id => {
