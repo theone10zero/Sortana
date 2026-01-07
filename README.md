@@ -6,7 +6,10 @@ Sortana is an experimental Thunderbird add-on that integrates an AI-powered filt
 It allows you to classify email messages by sending their contents to a configurable
 HTTP endpoint. Sortana uses the `/v1/completions` API; the options page stores a base
 URL and appends `/v1/completions` when sending requests. The endpoint should respond
-with JSON indicating whether the message meets a specified criterion.
+with JSON indicating whether the message meets a specified criterion, including a
+short reasoning summary.
+Responses are parsed by extracting the last JSON object in the response text and
+expecting a `match` (or `matched`) boolean plus a `reason` string.
 
 ## Features
 

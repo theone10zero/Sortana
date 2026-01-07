@@ -118,8 +118,17 @@ async function clearError() {
 }
 
 function recordError(context, err) {
-    const message = err instanceof Error ? err.message : String(err || 'Unknown error');
-    const detail = err instanceof Error ? err.stack : '';
+    let message = 'Unknown error';
+    let detail = '';
+    if (err instanceof Error) {
+        message = err.message;
+        detail = err.stack || '';
+    } else if (err && typeof err === 'object') {
+        message = typeof err.message === 'string' ? err.message : String(err || 'Unknown error');
+        detail = typeof err.detail === 'string' ? err.detail : '';
+    } else {
+        message = String(err || 'Unknown error');
+    }
     errorLog.unshift({
         time: Date.now(),
         context,
@@ -741,6 +750,9 @@ async function clearCacheForMessages(idsInput) {
             return { count: queuedCount + (processing ? 1 : 0) };
         } else if (msg?.type === "sortana:getErrorLog") {
             return { errors: errorLog.slice() };
+        } else if (msg?.type === "sortana:recordError") {
+            recordError(msg.context || "Sortana Error", { message: msg.message, detail: msg.detail });
+            return { ok: true };
         } else if (msg?.type === "sortana:getTiming") {
             const t = timingStats;
             const std = t.count > 1 ? Math.sqrt(t.m2 / (t.count - 1)) : 0;

@@ -25,8 +25,8 @@ const DEFAULT_CUSTOM_SYSTEM_PROMPT = "Determine whether the email satisfies the 
 
 const SYSTEM_SUFFIX = `
 Return ONLY a JSON object on a single line of the form:
-{"match": true} - if the email satisfies the criterion
-{"match": false} - otherwise
+{"match": true, "reason": "<short explanation>"} - if the email satisfies the criterion
+{"match": false, "reason": "<short explanation>"} - otherwise
 
 Do not add any other keys, text, or formatting.`;
 
@@ -266,15 +266,95 @@ function buildPayload(text, criterion) {
   return JSON.stringify(payloadObj);
 }
 
+function reportParseError(message, detail) {
+  try {
+    const runtime = (globalThis.browser ?? globalThis.messenger)?.runtime;
+    if (!runtime?.sendMessage) {
+      return;
+    }
+    runtime.sendMessage({
+      type: "sortana:recordError",
+      context: "AI response parsing",
+      message,
+      detail
+    }).catch(() => {});
+  } catch (e) {
+    aiLog("Failed to report parse error", { level: "warn" }, e);
+  }
+}
+
+function extractLastJsonObject(text) {
+  let last = null;
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      if (depth === 0) {
+        start = i;
+      }
+      depth += 1;
+      continue;
+    }
+    if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start !== -1) {
+        last = text.slice(start, i + 1);
+        start = -1;
+      }
+    }
+  }
+
+  return last;
+}
+
 function parseMatch(result) {
   const rawText = result.choices?.[0]?.text || "";
-  const thinkText = rawText.match(/<think>[\s\S]*?<\/think>/gi)?.join('') || '';
-  aiLog('[AiClassifier] ⮡ Reasoning:', {debug: true}, thinkText);
-  const cleanedText = rawText.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  aiLog('[AiClassifier] ⮡ Cleaned Response Text:', {debug: true}, cleanedText);
-  const obj = JSON.parse(cleanedText);
-  const matched = obj.matched === true || obj.match === true;
-  return { matched, reason: thinkText };
+  const candidate = extractLastJsonObject(rawText);
+  if (!candidate) {
+    reportParseError("No JSON object found in AI response.", rawText.slice(0, 800));
+    return { matched: false, reason: "" };
+  }
+
+  let obj;
+  try {
+    obj = JSON.parse(candidate);
+  } catch (e) {
+    reportParseError("Failed to parse JSON from AI response.", candidate.slice(0, 800));
+    return { matched: false, reason: "" };
+  }
+
+  const matchValue = Object.prototype.hasOwnProperty.call(obj, "match") ? obj.match : obj.matched;
+  const matched = matchValue === true;
+  if (matchValue !== true && matchValue !== false) {
+    reportParseError("AI response missing valid match boolean.", candidate.slice(0, 800));
+  }
+
+  const reasonValue = obj.reason ?? obj.reasoning ?? obj.explaination;
+  const reason = typeof reasonValue === "string" ? reasonValue : "";
+
+  return { matched, reason };
 }
 
 function cacheEntry(cacheKey, matched, reason) {
