@@ -44,6 +44,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "prompt_templates", "prompt_
 		prompt_templates\mistral.txt = prompt_templates\mistral.txt
 		prompt_templates\openai.txt = prompt_templates\openai.txt
 		prompt_templates\qwen.txt = prompt_templates\qwen.txt
+		prompt_templates\harmony.txt = prompt_templates\harmony.txt
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "resources", "resources", "{68A87938-5C2B-49F5-8AAA-8A34FBBFD854}"

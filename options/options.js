@@ -104,6 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         openai: browser.i18n.getMessage('template.openai'),
         qwen: browser.i18n.getMessage('template.qwen'),
         mistral: browser.i18n.getMessage('template.mistral'),
+        harmony: browser.i18n.getMessage('template.harmony'),
         custom: browser.i18n.getMessage('template.custom')
     };
     const templateSelect = document.getElementById('template');

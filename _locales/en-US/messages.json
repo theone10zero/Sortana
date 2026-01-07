@@ -12,6 +12,7 @@
   "template.openai": { "message": "OpenAI / ChatML" },
   "template.qwen": { "message": "Qwen" },
   "template.mistral": { "message": "Mistral" },
+  "template.harmony": { "message": "Harmony (gpt-oss)" },
   "template.custom": { "message": "Custom" },
   "options.save": { "message": "Save" },
   "options.debugLogging": { "message": "Enable debug logging" },

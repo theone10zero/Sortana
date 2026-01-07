@@ -10,7 +10,7 @@ This file provides guidelines for codex agents contributing to the Sortana proje
 - `options/`: The options page HTML, JavaScript and bundled Bulma CSS (v1.0.3).
 - `details.html` and `details.js`: View AI reasoning and clear cache for a message.
 - `resources/`: Images and other static files.
-- `prompt_templates/`: Prompt template files for the AI service.
+- `prompt_templates/`: Prompt template files for the AI service (openai, qwen, mistral, harmony).
 - `build-xpi.ps1`: PowerShell script to package the extension.
 - `build-xpi.sh`: Bash script to package the extension.
 

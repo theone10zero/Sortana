@@ -14,7 +14,7 @@ expecting a `match` (or `matched`) boolean plus a `reason` string.
 ## Features
 
 - **Configurable endpoint** – set the classification service base URL on the options page.
-- **Prompt templates** – choose between several model formats or provide your own custom template.
+- **Prompt templates** – choose between OpenAI/ChatML, Qwen, Mistral, Harmony (gpt-oss), or provide your own custom template.
 - **Custom system prompts** – tailor the instructions sent to the model for more precise results.
 - **Persistent result caching** – classification results and reasoning are saved to disk so messages aren't re-evaluated across restarts.
 - **Advanced parameters** – tune generation settings like temperature, top‑p and more from the options page.
