@@ -4,12 +4,13 @@
 
 Sortana is an experimental Thunderbird add-on that integrates an AI-powered filter rule. 
 It allows you to classify email messages by sending their contents to a configurable
-HTTP endpoint. The endpoint should respond with JSON indicating whether the
-message meets a specified criterion.
+HTTP endpoint. Sortana uses the `/v1/completions` API; the options page stores a base
+URL and appends `/v1/completions` when sending requests. The endpoint should respond
+with JSON indicating whether the message meets a specified criterion.
 
 ## Features
 
-- **Configurable endpoint** – set the classification service URL on the options page.
+- **Configurable endpoint** – set the classification service base URL on the options page.
 - **Prompt templates** – choose between several model formats or provide your own custom template.
 - **Custom system prompts** – tailor the instructions sent to the model for more precise results.
 - **Persistent result caching** – classification results and reasoning are saved to disk so messages aren't re-evaluated across restarts.
@@ -72,7 +73,8 @@ Sortana is implemented entirely with standard WebExtension scripts—no custom e
 
 ## Usage
 
-1. Open the add-on's options and set the URL of your classification service.
+1. Open the add-on's options and set the base URL of your classification service
+   (Sortana will append `/v1/completions`).
  2. Use the **Classification Rules** section to add a criterion and optional
    actions such as tagging, moving, copying, forwarding, replying,
    deleting or archiving a message when it matches. Drag rules to
@@ -158,4 +160,3 @@ how Thunderbird's WebExtension and experiment APIs can be extended. Their code
 provided invaluable guidance during development.
 
 - Icons from [cc0-icons.jonh.eu](https://cc0-icons.jonh.eu/) are used under the CC0 license.
-

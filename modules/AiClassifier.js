@@ -15,6 +15,8 @@ try {
   Services = undefined;
 }
 
+const COMPLETIONS_PATH = "/v1/completions";
+
 const SYSTEM_PREFIX = `You are an email-classification assistant.
 Read the email below and the classification criterion provided by the user.
 `;
@@ -28,7 +30,8 @@ Return ONLY a JSON object on a single line of the form:
 
 Do not add any other keys, text, or formatting.`;
 
-let gEndpoint = "http://127.0.0.1:5000/v1/classify";
+let gEndpointBase = "http://127.0.0.1:5000";
+let gEndpoint = buildEndpointUrl(gEndpointBase);
 let gTemplateName = "openai";
 let gCustomTemplate = "";
 let gCustomSystemPrompt = DEFAULT_CUSTOM_SYSTEM_PROMPT;
@@ -38,6 +41,28 @@ let gAiParams = Object.assign({}, DEFAULT_AI_PARAMS);
 
 let gCache = new Map();
 let gCacheLoaded = false;
+
+function normalizeEndpointBase(endpoint) {
+  if (typeof endpoint !== "string") {
+    return "";
+  }
+  let base = endpoint.trim();
+  if (!base) {
+    return "";
+  }
+  base = base.replace(/\/v1\/completions\/?$/i, "");
+  return base;
+}
+
+function buildEndpointUrl(endpointBase) {
+  const base = normalizeEndpointBase(endpointBase);
+  if (!base) {
+    return "";
+  }
+  const withScheme = /^https?:\/\//i.test(base) ? base : `https://${base}`;
+  const needsSlash = withScheme.endsWith("/");
+  return `${withScheme}${needsSlash ? "" : "/"}v1/completions`;
+}
 
 function sha256HexSync(str) {
   try {
@@ -158,8 +183,12 @@ function loadTemplateSync(name) {
 }
 
 async function setConfig(config = {}) {
-  if (config.endpoint) {
-    gEndpoint = config.endpoint;
+  if (typeof config.endpoint === "string") {
+    const base = normalizeEndpointBase(config.endpoint);
+    if (base) {
+      gEndpointBase = base;
+    }
+    gEndpoint = buildEndpointUrl(gEndpointBase);
   }
   if (config.templateName) {
     gTemplateName = config.templateName;
@@ -187,6 +216,10 @@ async function setConfig(config = {}) {
   } else {
     gTemplateText = await loadTemplate(gTemplateName);
   }
+  if (!gEndpoint) {
+    gEndpoint = buildEndpointUrl(gEndpointBase);
+  }
+  aiLog(`[AiClassifier] Endpoint base set to ${gEndpointBase}`, {debug: true});
   aiLog(`[AiClassifier] Endpoint set to ${gEndpoint}`, {debug: true});
   aiLog(`[AiClassifier] Template set to ${gTemplateName}`, {debug: true});
 }
@@ -344,4 +377,4 @@ async function init() {
   await loadCache();
 }
 
-export { classifyText, setConfig, removeCacheEntries, clearCache, getReason, getCachedResult, buildCacheKey, getCacheSize, init };
+export { buildEndpointUrl, normalizeEndpointBase, classifyText, setConfig, removeCacheEntries, clearCache, getReason, getCachedResult, buildCacheKey, getCacheSize, init };

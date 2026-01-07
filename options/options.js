@@ -99,7 +99,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         markDirty();
         await applyTheme(themeSelect.value);
     });
-    document.getElementById('endpoint').value = defaults.endpoint || 'http://127.0.0.1:5000/v1/completions';
+    const endpointInput = document.getElementById('endpoint');
+    const endpointPreview = document.getElementById('endpoint-preview');
+    const fallbackEndpoint = 'http://127.0.0.1:5000';
+    const storedEndpoint = defaults.endpoint || fallbackEndpoint;
+    const endpointBase = AiClassifier.normalizeEndpointBase(storedEndpoint) || storedEndpoint;
+    endpointInput.value = endpointBase;
+
+    function updateEndpointPreview() {
+        const resolved = AiClassifier.buildEndpointUrl(endpointInput.value);
+        endpointPreview.textContent = resolved
+            ? `Resolved endpoint: ${resolved}`
+            : 'Resolved endpoint: (invalid)';
+    }
+    endpointInput.addEventListener('input', updateEndpointPreview);
+    updateEndpointPreview();
 
     const templates = {
         openai: browser.i18n.getMessage('template.openai'),
@@ -806,7 +820,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initialized = true;
 
     document.getElementById('save').addEventListener('click', async () => {
-        const endpoint = document.getElementById('endpoint').value;
+        const endpoint = endpointInput.value.trim();
         const templateName = templateSelect.value;
         const customTemplateText = customTemplate.value;
         const customSystemPrompt = systemBox.value;

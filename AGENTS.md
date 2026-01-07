@@ -30,6 +30,10 @@ This file provides guidelines for codex agents contributing to the Sortana proje
 
 There are currently no automated tests for this project. If you add tests in the future, specify the commands to run them here. For now, verification must happen manually in Thunderbird. Do **not** run the `ps1` build script or the SVG processing script.
 
+## Endpoint Notes
+
+Sortana targets the `/v1/completions` API. The endpoint value stored in settings is a base URL; the full request URL is constructed by appending `/v1/completions` (adding a slash when needed) and defaulting to `https://` if no scheme is provided.
+
 ## Documentation
 
 Additional documentation exists outside this repository.
@@ -73,4 +77,3 @@ Toolbar and menu icons reside under `resources/img` and are provided in 16, 32
 and 64 pixel variants. When changing these icons, pass a dictionary mapping the
 sizes to the paths in `browserAction.setIcon` or `messageDisplayAction.setIcon`.
 Use `resources/svg2img.ps1` to regenerate PNGs from the SVG sources.
-
