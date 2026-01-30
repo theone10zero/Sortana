@@ -1017,6 +1017,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         cacheCountEl.textContent = '0';
     });
 
+    document.getElementById('reset-timing').addEventListener('click', async () => {
+        await browser.runtime.sendMessage({ type: 'sortana:resetTimingStats' });
+        await refreshMaintenance();
+    });
+
     function selectedCategories() {
         return [...document.querySelectorAll('.transfer-category:checked')].map(el => el.value);
     }

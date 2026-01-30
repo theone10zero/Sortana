@@ -750,6 +750,15 @@ async function clearCacheForMessages(idsInput) {
                 logger.aiLog("failed to clear cache for message", { level: 'error' }, e);
                 return { ok: false };
             }
+        } else if (msg?.type === "sortana:resetTimingStats") {
+            const last = timingStats.last;
+            timingStats.count = 0;
+            timingStats.mean = 0;
+            timingStats.m2 = 0;
+            timingStats.total = 0;
+            timingStats.last = typeof last === 'number' ? last : -1;
+            await storage.local.set({ classifyStats: timingStats });
+            return { ok: true };
         } else if (msg?.type === "sortana:getQueueCount") {
             return { count: queuedCount + (processing ? 1 : 0) };
         } else if (msg?.type === "sortana:getErrorLog") {
