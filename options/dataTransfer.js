@@ -3,6 +3,7 @@ const storage = (globalThis.messenger ?? browser).storage;
 const KEY_GROUPS = {
     settings: [
         'endpoint',
+        'model',
         'templateName',
         'customTemplate',
         'customSystemPrompt',

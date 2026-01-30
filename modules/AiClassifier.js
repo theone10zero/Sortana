@@ -16,6 +16,7 @@ try {
 }
 
 const COMPLETIONS_PATH = "/v1/completions";
+const MODELS_PATH = "/v1/models";
 
 const SYSTEM_PREFIX = `You are an email-classification assistant.
 Read the email below and the classification criterion provided by the user.
@@ -38,6 +39,7 @@ let gCustomSystemPrompt = DEFAULT_CUSTOM_SYSTEM_PROMPT;
 let gTemplateText = "";
 
 let gAiParams = Object.assign({}, DEFAULT_AI_PARAMS);
+let gModel = "";
 
 let gCache = new Map();
 let gCacheLoaded = false;
@@ -50,7 +52,7 @@ function normalizeEndpointBase(endpoint) {
   if (!base) {
     return "";
   }
-  base = base.replace(/\/v1\/completions\/?$/i, "");
+  base = base.replace(/\/v1\/(completions|models)\/?$/i, "");
   return base;
 }
 
@@ -61,7 +63,19 @@ function buildEndpointUrl(endpointBase) {
   }
   const withScheme = /^https?:\/\//i.test(base) ? base : `https://${base}`;
   const needsSlash = withScheme.endsWith("/");
-  return `${withScheme}${needsSlash ? "" : "/"}v1/completions`;
+  const path = COMPLETIONS_PATH.replace(/^\//, "");
+  return `${withScheme}${needsSlash ? "" : "/"}${path}`;
+}
+
+function buildModelsUrl(endpointBase) {
+  const base = normalizeEndpointBase(endpointBase);
+  if (!base) {
+    return "";
+  }
+  const withScheme = /^https?:\/\//i.test(base) ? base : `https://${base}`;
+  const needsSlash = withScheme.endsWith("/");
+  const path = MODELS_PATH.replace(/^\//, "");
+  return `${withScheme}${needsSlash ? "" : "/"}${path}`;
 }
 
 function sha256HexSync(str) {
@@ -206,6 +220,9 @@ async function setConfig(config = {}) {
       }
     }
   }
+  if (typeof config.model === "string") {
+    gModel = config.model.trim();
+  }
   if (typeof config.debugLogging === "boolean") {
     setDebug(config.debugLogging);
   }
@@ -263,6 +280,9 @@ function buildPayload(text, criterion) {
   let payloadObj = Object.assign({
     prompt: buildPrompt(text, criterion)
   }, gAiParams);
+  if (gModel) {
+    payloadObj.model = gModel;
+  }
   return JSON.stringify(payloadObj);
 }
 
@@ -457,4 +477,4 @@ async function init() {
   await loadCache();
 }
 
-export { buildEndpointUrl, normalizeEndpointBase, classifyText, setConfig, removeCacheEntries, clearCache, getReason, getCachedResult, buildCacheKey, getCacheSize, init };
+export { buildEndpointUrl, buildModelsUrl, normalizeEndpointBase, classifyText, setConfig, removeCacheEntries, clearCache, getReason, getCachedResult, buildCacheKey, getCacheSize, init };

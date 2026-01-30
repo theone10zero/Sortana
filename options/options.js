@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         'templateName',
         'customTemplate',
         'customSystemPrompt',
+        'model',
         'aiParams',
         'debugLogging',
         'htmlToMarkdown',
@@ -99,6 +100,88 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     endpointInput.addEventListener('input', updateEndpointPreview);
     updateEndpointPreview();
+
+    const modelSelect = document.getElementById('model-select');
+    const refreshModelsBtn = document.getElementById('refresh-models');
+    const modelHelp = document.getElementById('model-help');
+    const storedModel = typeof defaults.model === 'string' ? defaults.model : '';
+
+    function setModelHelp(message = '', isError = false) {
+        if (!modelHelp) return;
+        modelHelp.textContent = message;
+        modelHelp.classList.toggle('is-danger', isError);
+    }
+
+    function populateModelOptions(models = [], selectedModel = '') {
+        if (!modelSelect) return;
+        const modelIds = Array.isArray(models) ? models.filter(Boolean) : [];
+        modelSelect.innerHTML = '';
+
+        const noneOpt = document.createElement('option');
+        noneOpt.value = '';
+        noneOpt.textContent = 'None (omit model)';
+        modelSelect.appendChild(noneOpt);
+
+        if (selectedModel && !modelIds.includes(selectedModel)) {
+            const storedOpt = document.createElement('option');
+            storedOpt.value = selectedModel;
+            storedOpt.textContent = `Stored: ${selectedModel}`;
+            modelSelect.appendChild(storedOpt);
+        }
+
+        for (const id of modelIds) {
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = id;
+            modelSelect.appendChild(opt);
+        }
+
+        const hasSelected = [...modelSelect.options].some(opt => opt.value === selectedModel);
+        modelSelect.value = hasSelected ? selectedModel : '';
+    }
+
+    async function fetchModels(preferredModel = '') {
+        if (!modelSelect || !refreshModelsBtn) return;
+        const modelsUrl = AiClassifier.buildModelsUrl(endpointInput.value);
+        if (!modelsUrl) {
+            setModelHelp('Set a valid endpoint to load models.', true);
+            populateModelOptions([], preferredModel || modelSelect.value);
+            return;
+        }
+
+        refreshModelsBtn.disabled = true;
+        setModelHelp('Loading models...');
+
+        try {
+            const response = await fetch(modelsUrl, { method: 'GET' });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            let models = [];
+            if (Array.isArray(data?.data)) {
+                models = data.data.map(model => model?.id ?? model?.name ?? model?.model ?? '').filter(Boolean);
+            } else if (Array.isArray(data?.models)) {
+                models = data.models.map(model => model?.id ?? model?.name ?? model?.model ?? '').filter(Boolean);
+            } else if (Array.isArray(data)) {
+                models = data.map(model => model?.id ?? model?.name ?? model?.model ?? model).filter(Boolean);
+            }
+            models = [...new Set(models)];
+            populateModelOptions(models, preferredModel || modelSelect.value);
+            setModelHelp(models.length ? `Loaded ${models.length} model${models.length === 1 ? '' : 's'}.` : 'No models returned.');
+        } catch (e) {
+            logger.aiLog('[options] failed to load models', { level: 'warn' }, e);
+            setModelHelp('Failed to load models. Check the endpoint and network.', true);
+            populateModelOptions([], preferredModel || modelSelect.value);
+        } finally {
+            refreshModelsBtn.disabled = false;
+        }
+    }
+
+    populateModelOptions([], storedModel);
+    refreshModelsBtn?.addEventListener('click', () => {
+        fetchModels(modelSelect.value);
+    });
 
     const templates = {
         openai: browser.i18n.getMessage('template.openai'),
@@ -276,6 +359,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadErrors();
 
     updateDiffDisplay();
+    await fetchModels(storedModel);
 
     [htmlToggle, stripUrlToggle, altTextToggle, collapseWhitespaceToggle, tokenReductionToggle].forEach(toggle => {
         toggle.addEventListener('change', () => {
@@ -914,6 +998,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('save').addEventListener('click', async () => {
         const endpoint = endpointInput.value.trim();
+        const model = modelSelect?.value || '';
         const templateName = templateSelect.value;
         const customTemplateText = customTemplate.value;
         const customSystemPrompt = systemBox.value;
@@ -979,10 +1064,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tokenReduction = tokenReductionToggle.checked;
         const showDebugTab = debugTabToggle.checked;
         const theme = themeSelect.value;
-        await storage.local.set({ endpoint, templateName, customTemplate: customTemplateText, customSystemPrompt, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
+        await storage.local.set({ endpoint, model, templateName, customTemplate: customTemplateText, customSystemPrompt, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
         await applyTheme(theme);
         try {
-            await AiClassifier.setConfig({ endpoint, templateName, customTemplate: customTemplateText, customSystemPrompt, aiParams: aiParamsSave, debugLogging });
+            await AiClassifier.setConfig({ endpoint, model, templateName, customTemplate: customTemplateText, customSystemPrompt, aiParams: aiParamsSave, debugLogging });
             logger.setDebug(debugLogging);
         } catch (e) {
             logger.aiLog('[options] failed to apply config', {level: 'error'}, e);

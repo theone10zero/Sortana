@@ -34,6 +34,7 @@ There are currently no automated tests for this project. If you add tests in the
 ## Endpoint Notes
 
 Sortana targets the `/v1/completions` API. The endpoint value stored in settings is a base URL; the full request URL is constructed by appending `/v1/completions` (adding a slash when needed) and defaulting to `https://` if no scheme is provided.
+The options page can query `/v1/models` from the same base URL to populate the Model dropdown; selecting **None** omits the `model` field from the request payload.
 Responses are expected to include a JSON object with `match` (or `matched`) plus a short `reason` string; the parser extracts the last JSON object in the response text and ignores any surrounding commentary.
 
 ## Documentation
