@@ -40,6 +40,9 @@ let gTemplateText = "";
 
 let gAiParams = Object.assign({}, DEFAULT_AI_PARAMS);
 let gModel = "";
+let gApiKey = "";
+let gOpenaiOrganization = "";
+let gOpenaiProject = "";
 
 let gCache = new Map();
 let gCacheLoaded = false;
@@ -223,6 +226,15 @@ async function setConfig(config = {}) {
   if (typeof config.model === "string") {
     gModel = config.model.trim();
   }
+  if (typeof config.apiKey === "string") {
+    gApiKey = config.apiKey.trim();
+  }
+  if (typeof config.openaiOrganization === "string") {
+    gOpenaiOrganization = config.openaiOrganization.trim();
+  }
+  if (typeof config.openaiProject === "string") {
+    gOpenaiProject = config.openaiProject.trim();
+  }
   if (typeof config.debugLogging === "boolean") {
     setDebug(config.debugLogging);
   }
@@ -239,6 +251,20 @@ async function setConfig(config = {}) {
   aiLog(`[AiClassifier] Endpoint base set to ${gEndpointBase}`, {debug: true});
   aiLog(`[AiClassifier] Endpoint set to ${gEndpoint}`, {debug: true});
   aiLog(`[AiClassifier] Template set to ${gTemplateName}`, {debug: true});
+}
+
+function buildAuthHeaders() {
+  const headers = {};
+  if (gApiKey) {
+    headers.Authorization = `Bearer ${gApiKey}`;
+  }
+  if (gOpenaiOrganization) {
+    headers["OpenAI-Organization"] = gOpenaiOrganization;
+  }
+  if (gOpenaiProject) {
+    headers["OpenAI-Project"] = gOpenaiProject;
+  }
+  return headers;
 }
 
 function buildSystemPrompt() {
@@ -453,7 +479,7 @@ async function classifyText(text, criterion, cacheKey = null) {
   try {
     const response = await fetch(gEndpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
       body: payload,
     });
 

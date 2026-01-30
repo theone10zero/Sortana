@@ -4,6 +4,9 @@ const KEY_GROUPS = {
     settings: [
         'endpoint',
         'model',
+        'apiKey',
+        'openaiOrganization',
+        'openaiProject',
         'templateName',
         'customTemplate',
         'customSystemPrompt',

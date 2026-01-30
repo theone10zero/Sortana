@@ -142,6 +142,32 @@
 
                 <div id="advanced-options" class="mt-4 is-hidden">
                     <div class="field">
+                        <label class="label" for="api-key">API key</label>
+                        <div class="field has-addons">
+                            <div class="control is-expanded">
+                                <input class="input" type="password" id="api-key" placeholder="sk-...">
+                            </div>
+                            <div class="control">
+                                <button class="button" id="toggle-api-key" type="button">Show</button>
+                            </div>
+                        </div>
+                        <p class="help">Leave blank for unauthenticated endpoints.</p>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="openai-organization">OpenAI Organization</label>
+                        <div class="control">
+                            <input class="input" type="text" id="openai-organization" placeholder="org-...">
+                        </div>
+                        <p class="help">Optional header for OpenAI-hosted endpoints.</p>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="openai-project">OpenAI Project</label>
+                        <div class="control">
+                            <input class="input" type="text" id="openai-project" placeholder="proj_...">
+                        </div>
+                        <p class="help">Optional header for OpenAI-hosted endpoints.</p>
+                    </div>
+                    <div class="field">
                         <label class="checkbox">
                             <input type="checkbox" id="debug-logging"> Enable debug logging
                         </label>

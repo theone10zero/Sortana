@@ -11,6 +11,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         'customTemplate',
         'customSystemPrompt',
         'model',
+        'apiKey',
+        'openaiOrganization',
+        'openaiProject',
         'aiParams',
         'debugLogging',
         'htmlToMarkdown',
@@ -140,6 +143,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         modelSelect.value = hasSelected ? selectedModel : '';
     }
 
+    function buildAuthHeaders() {
+        const headers = {};
+        const apiKey = apiKeyInput?.value.trim();
+        if (apiKey) {
+            headers.Authorization = `Bearer ${apiKey}`;
+        }
+        const organization = openaiOrgInput?.value.trim();
+        if (organization) {
+            headers["OpenAI-Organization"] = organization;
+        }
+        const project = openaiProjectInput?.value.trim();
+        if (project) {
+            headers["OpenAI-Project"] = project;
+        }
+        return headers;
+    }
+
     async function fetchModels(preferredModel = '') {
         if (!modelSelect || !refreshModelsBtn) return;
         const modelsUrl = AiClassifier.buildModelsUrl(endpointInput.value);
@@ -153,7 +173,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setModelHelp('Loading models...');
 
         try {
-            const response = await fetch(modelsUrl, { method: 'GET' });
+            const response = await fetch(modelsUrl, { method: 'GET', headers: buildAuthHeaders() });
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
@@ -213,6 +233,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     const advancedBtn = document.getElementById('toggle-advanced');
     advancedBtn.addEventListener('click', () => {
         advancedBox.classList.toggle('is-hidden');
+    });
+
+    const apiKeyInput = document.getElementById('api-key');
+    const apiKeyToggle = document.getElementById('toggle-api-key');
+    const openaiOrgInput = document.getElementById('openai-organization');
+    const openaiProjectInput = document.getElementById('openai-project');
+    if (apiKeyInput) {
+        apiKeyInput.value = typeof defaults.apiKey === 'string' ? defaults.apiKey : '';
+    }
+    if (openaiOrgInput) {
+        openaiOrgInput.value = typeof defaults.openaiOrganization === 'string' ? defaults.openaiOrganization : '';
+    }
+    if (openaiProjectInput) {
+        openaiProjectInput.value = typeof defaults.openaiProject === 'string' ? defaults.openaiProject : '';
+    }
+    apiKeyToggle?.addEventListener('click', () => {
+        if (!apiKeyInput) return;
+        const show = apiKeyInput.type === 'password';
+        apiKeyInput.type = show ? 'text' : 'password';
+        apiKeyToggle.textContent = show ? 'Hide' : 'Show';
     });
 
     const debugToggle = document.getElementById('debug-logging');
@@ -999,6 +1039,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('save').addEventListener('click', async () => {
         const endpoint = endpointInput.value.trim();
         const model = modelSelect?.value || '';
+        const apiKey = apiKeyInput?.value.trim() || '';
+        const openaiOrganization = openaiOrgInput?.value.trim() || '';
+        const openaiProject = openaiProjectInput?.value.trim() || '';
         const templateName = templateSelect.value;
         const customTemplateText = customTemplate.value;
         const customSystemPrompt = systemBox.value;
@@ -1064,10 +1107,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tokenReduction = tokenReductionToggle.checked;
         const showDebugTab = debugTabToggle.checked;
         const theme = themeSelect.value;
-        await storage.local.set({ endpoint, model, templateName, customTemplate: customTemplateText, customSystemPrompt, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
+        await storage.local.set({ endpoint, model, apiKey, openaiOrganization, openaiProject, templateName, customTemplate: customTemplateText, customSystemPrompt, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
         await applyTheme(theme);
         try {
-            await AiClassifier.setConfig({ endpoint, model, templateName, customTemplate: customTemplateText, customSystemPrompt, aiParams: aiParamsSave, debugLogging });
+            await AiClassifier.setConfig({ endpoint, model, apiKey, openaiOrganization, openaiProject, templateName, customTemplate: customTemplateText, customSystemPrompt, aiParams: aiParamsSave, debugLogging });
             logger.setDebug(debugLogging);
         } catch (e) {
             logger.aiLog('[options] failed to apply config', {level: 'error'}, e);

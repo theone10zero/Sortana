@@ -15,6 +15,7 @@ expecting a `match` (or `matched`) boolean plus a `reason` string.
 
 - **Configurable endpoint** – set the classification service base URL on the options page.
 - **Model selection** – load available models from the endpoint and choose one (or omit the model field).
+- **Optional OpenAI auth headers** – provide an API key plus optional organization/project headers when needed.
 - **Prompt templates** – choose between OpenAI/ChatML, Qwen, Mistral, Harmony (gpt-oss), or provide your own custom template.
 - **Custom system prompts** – tailor the instructions sent to the model for more precise results.
 - **Persistent result caching** – classification results and reasoning are saved to disk so messages aren't re-evaluated across restarts.
@@ -82,6 +83,8 @@ Sortana is implemented entirely with standard WebExtension scripts—no custom e
 1. Open the add-on's options and set the base URL of your classification service
    (Sortana will append `/v1/completions`). Use the Model dropdown to load
    `/v1/models` and select a model or choose **None** to omit the `model` field.
+   Advanced settings include optional API key, organization, and project headers
+   for OpenAI-hosted endpoints.
  2. Use the **Classification Rules** section to add a criterion and optional
    actions such as tagging, moving, copying, forwarding, replying,
    deleting or archiving a message when it matches. Drag rules to
