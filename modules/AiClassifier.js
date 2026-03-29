@@ -4,17 +4,6 @@ import { DEFAULT_AI_PARAMS } from "./defaultParams.js";
 
 const storage = (globalThis.messenger ?? globalThis.browser).storage;
 
-let Services;
-try {
-  if (typeof globalThis !== "undefined" && globalThis.Services) {
-    Services = globalThis.Services;
-  } else if (typeof ChromeUtils !== "undefined" && ChromeUtils.importESModule) {
-    ({ Services } = ChromeUtils.importESModule("resource://gre/modules/Services.sys.mjs"));
-  }
-} catch (e) {
-  Services = undefined;
-}
-
 const COMPLETIONS_PATH = "/v1/completions";
 const MODELS_PATH = "/v1/models";
 
@@ -81,26 +70,14 @@ function buildModelsUrl(endpointBase) {
   return `${withScheme}${needsSlash ? "" : "/"}${path}`;
 }
 
-function sha256HexSync(str) {
-  try {
-    const hasher = Cc["@mozilla.org/security/hash;1"].createInstance(Ci.nsICryptoHash);
-    hasher.init(Ci.nsICryptoHash.SHA256);
-    const data = new TextEncoder().encode(str);
-    hasher.update(data, data.length);
-    const binary = hasher.finish(false);
-    return Array.from(binary, c => ("0" + c.charCodeAt(0).toString(16)).slice(-2)).join("");
-  } catch (e) {
-    aiLog(`sha256HexSync failed`, { level: 'error' }, e);
-    return "";
-  }
-}
-
 async function sha256Hex(str) {
-  if (typeof crypto?.subtle?.digest === "function") {
+  try {
     const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
     return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, "0")).join("");
+  } catch (e) {
+    aiLog("sha256Hex failed", { level: "error" }, e);
+    return "";
   }
-  return sha256HexSync(str);
 }
 
 async function resolveHeaderId(id) {
@@ -119,9 +96,6 @@ async function resolveHeaderId(id) {
 
 async function buildCacheKey(id, criterion) {
   const resolvedId = await resolveHeaderId(id);
-  if (Services) {
-    return sha256HexSync(`${resolvedId}|${criterion}`);
-  }
   return sha256Hex(`${resolvedId}|${criterion}`);
 }
 
@@ -188,17 +162,6 @@ async function loadTemplate(name) {
   return "";
 }
 
-function loadTemplateSync(name) {
-  if (!Services?.tm?.spinEventLoopUntil) {
-    throw new Error("loadTemplateSync requires Services");
-  }
-  let text = "";
-  let done = false;
-  loadTemplate(name).then(t => { text = t; }).catch(() => {}).finally(() => { done = true; });
-  Services.tm.spinEventLoopUntil(() => done);
-  return text;
-}
-
 async function setConfig(config = {}) {
   if (typeof config.endpoint === "string") {
     const base = normalizeEndpointBase(config.endpoint);
@@ -240,8 +203,6 @@ async function setConfig(config = {}) {
   }
   if (gTemplateName === "custom") {
     gTemplateText = gCustomTemplate;
-  } else if (Services?.tm?.spinEventLoopUntil) {
-    gTemplateText = loadTemplateSync(gTemplateName);
   } else {
     gTemplateText = await loadTemplate(gTemplateName);
   }
@@ -278,7 +239,7 @@ function buildPrompt(body, criterion) {
     email: body,
     query: criterion,
   };
-  let template = gTemplateText || loadTemplateSync(gTemplateName);
+  let template = gTemplateText || "";
   return template.replace(/{{\s*(\w+)\s*}}/g, (m, key) => data[key] || "");
 }
 

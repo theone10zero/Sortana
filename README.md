@@ -47,7 +47,7 @@ containing `matched` and `reason` fields. Older installations with a separate
 
 ## Architecture Overview
 
-Sortana is implemented entirely with standard WebExtension scripts—no custom experiment code is required:
+Sortana is implemented entirely with documented MailExtension/WebExtension APIs. No custom experiment code or Thunderbird-internal fallback paths are required:
 
 - `background.js` loads saved settings, manages the classification queue and listens for new messages.
 - `modules/AiClassifier.js` implements the classification logic and cache handling.
