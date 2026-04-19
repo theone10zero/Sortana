@@ -93,12 +93,13 @@
                 </div>
 
                 <div class="field">
-                    <label class="label" for="template">Prompt template</label>
+                    <label class="label" for="template">Request format</label>
                     <div class="control">
                         <div class="select is-fullwidth">
                             <select id="template"></select>
                         </div>
                     </div>
+                    <p class="help">OpenAI Chat uses native chat messages. Other formats send one templated user message over Chat Completions.</p>
                 </div>
 
                 <div id="custom-template-container" class="field is-hidden">
@@ -203,7 +204,7 @@
                         </label>
                     </div>
                     <div class="field">
-                        <label class="label" for="max_tokens">Max tokens</label>
+                        <label class="label" for="max_tokens">Max completion tokens</label>
                         <div class="control">
                             <input class="input" type="number" id="max_tokens">
                         </div>
