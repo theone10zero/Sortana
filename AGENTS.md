@@ -13,6 +13,8 @@ This file provides guidelines for codex agents contributing to the Sortana proje
 - `prompt_templates/`: Custom/legacy templated message material kept in-repo for non-native prompt flows.
 - `build-xpi.ps1`: PowerShell script to package the extension.
 - `build-xpi.sh`: Bash script to package the extension.
+- `resources/svg2img.ps1`: PowerShell script to regenerate themed PNG icons from SVGs.
+- `resources/svg2img.sh`: Bash script to regenerate themed PNG icons from SVGs.
 
 ## Coding Style
 
@@ -80,4 +82,5 @@ time the add-on loads after an update.
 Toolbar and menu icons reside under `resources/img` and are provided in 16, 32
 and 64 pixel variants. When changing these icons, pass a dictionary mapping the
 sizes to the paths in `browserAction.setIcon` or `messageDisplayAction.setIcon`.
-Use `resources/svg2img.ps1` to regenerate PNGs from the SVG sources.
+Use `resources/svg2img.ps1` on Windows or `resources/svg2img.sh` on Linux to
+regenerate PNGs from the SVG sources.
