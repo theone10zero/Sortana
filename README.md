@@ -15,7 +15,7 @@ Classification requests ask the model for structured JSON output with a required
 - **Configurable endpoint** – set the classification service base URL on the options page.
 - **Model selection** – load available models from the endpoint and choose one (or omit the model field).
 - **Optional OpenAI auth headers** – provide an API key plus optional organization/project headers when needed.
-- **Request formats** – use native OpenAI chat messages or choose Qwen, Mistral, Harmony (gpt-oss), or a custom templated message format.
+- **Request formats** – built-in formats use native chat messages; a custom format can still send one templated user message when needed.
 - **Custom system prompts** – tailor the instructions sent to the model for more precise results.
 - **Persistent result caching** – classification results and reasoning are saved to disk so messages aren't re-evaluated across restarts.
 - **Advanced parameters** – tune generation settings like temperature and top‑p from the options page. Unsupported OpenAI sampling fields are filtered out automatically.

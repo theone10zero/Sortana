@@ -268,7 +268,7 @@ Classification criterion: ${criterion}`;
 }
 
 function buildMessages(body, criterion) {
-  if (gTemplateName === "openai") {
+  if (gTemplateName !== "custom") {
     return [
       {
         role: "system",
@@ -391,6 +391,56 @@ function extractMessageContent(content) {
   };
 }
 
+function extractLastJsonObject(text) {
+  if (typeof text !== "string" || !text) {
+    return null;
+  }
+
+  let last = null;
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      if (depth === 0) {
+        start = i;
+      }
+      depth += 1;
+      continue;
+    }
+    if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start !== -1) {
+        last = text.slice(start, i + 1);
+        start = -1;
+      }
+    }
+  }
+
+  return last;
+}
+
 function parseMatch(result) {
   const message = result?.choices?.[0]?.message;
   if (!message || typeof message !== "object") {
@@ -424,8 +474,17 @@ function parseMatch(result) {
   try {
     obj = JSON.parse(extracted.text);
   } catch (e) {
-    reportParseError("Failed to parse JSON from AI response.", extracted.text.slice(0, 800));
-    return { matched: false, reason: "" };
+    const candidate = extractLastJsonObject(extracted.text);
+    if (!candidate) {
+      reportParseError("Failed to parse JSON from AI response.", extracted.text.slice(0, 800));
+      return { matched: false, reason: "" };
+    }
+    try {
+      obj = JSON.parse(candidate);
+    } catch (inner) {
+      reportParseError("Failed to parse JSON from AI response.", extracted.text.slice(0, 800));
+      return { matched: false, reason: "" };
+    }
   }
 
   if (typeof obj?.match !== "boolean") {
