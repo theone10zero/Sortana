@@ -4,7 +4,7 @@ import { DEFAULT_AI_PARAMS } from "./defaultParams.js";
 
 const storage = (globalThis.messenger ?? globalThis.browser).storage;
 
-const CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
+const COMPLETIONS_PATH = "/v1/completions";
 const MODELS_PATH = "/v1/models";
 
 const SYSTEM_PREFIX = `You are an email-classification assistant.
@@ -14,26 +14,11 @@ Read the email below and the classification criterion provided by the user.
 const DEFAULT_CUSTOM_SYSTEM_PROMPT = "Determine whether the email satisfies the user's criterion.";
 
 const SYSTEM_SUFFIX = `
-Return JSON that matches the requested schema exactly.
-Set "match" to true when the email satisfies the criterion, otherwise false.
-Set "reason" to a short explanation grounded in the email contents.`;
+Return ONLY a JSON object on a single line of the form:
+{"match": true, "reason": "<short explanation>"} - if the email satisfies the criterion
+{"match": false, "reason": "<short explanation>"} - otherwise
 
-const RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: {
-    name: "email_classification",
-    strict: true,
-    schema: {
-      type: "object",
-      properties: {
-        match: { type: "boolean" },
-        reason: { type: "string" },
-      },
-      required: ["match", "reason"],
-      additionalProperties: false,
-    },
-  },
-};
+Do not add any other keys, text, or formatting.`;
 
 let gEndpointBase = "http://127.0.0.1:5000";
 let gEndpoint = buildEndpointUrl(gEndpointBase);
@@ -59,7 +44,7 @@ function normalizeEndpointBase(endpoint) {
   if (!base) {
     return "";
   }
-  base = base.replace(/\/v1(?:\/(?:chat\/completions|completions|models))?\/?$/i, "");
+  base = base.replace(/\/v1\/(completions|models)\/?$/i, "");
   return base;
 }
 
@@ -70,7 +55,7 @@ function buildEndpointUrl(endpointBase) {
   }
   const withScheme = /^https?:\/\//i.test(base) ? base : `https://${base}`;
   const needsSlash = withScheme.endsWith("/");
-  const path = CHAT_COMPLETIONS_PATH.replace(/^\//, "");
+  const path = COMPLETIONS_PATH.replace(/^\//, "");
   return `${withScheme}${needsSlash ? "" : "/"}${path}`;
 }
 
@@ -216,9 +201,7 @@ async function setConfig(config = {}) {
   if (typeof config.debugLogging === "boolean") {
     setDebug(config.debugLogging);
   }
-  if (gTemplateName === "openai") {
-    gTemplateText = "";
-  } else if (gTemplateName === "custom") {
+  if (gTemplateName === "custom") {
     gTemplateText = gCustomTemplate;
   } else {
     gTemplateText = await loadTemplate(gTemplateName);
@@ -260,35 +243,6 @@ function buildPrompt(body, criterion) {
   return template.replace(/{{\s*(\w+)\s*}}/g, (m, key) => data[key] || "");
 }
 
-function buildUserMessage(body, criterion) {
-  return `Email contents:
-${body}
-
-Classification criterion: ${criterion}`;
-}
-
-function buildMessages(body, criterion) {
-  if (gTemplateName === "openai") {
-    return [
-      {
-        role: "system",
-        content: buildSystemPrompt(),
-      },
-      {
-        role: "user",
-        content: buildUserMessage(body, criterion),
-      },
-    ];
-  }
-
-  return [
-    {
-      role: "user",
-      content: buildPrompt(body, criterion),
-    },
-  ];
-}
-
 function getCachedResult(cacheKey) {
   if (!gCacheLoaded) {
     return null;
@@ -309,41 +263,14 @@ function getReason(cacheKey) {
   return cacheKey && entry ? entry.reason || null : null;
 }
 
-function buildOpenAiParams() {
-  const params = {};
-
-  if (Number.isFinite(gAiParams.max_tokens) && gAiParams.max_tokens > 0) {
-    params.max_completion_tokens = Math.trunc(gAiParams.max_tokens);
-  }
-  if (Number.isFinite(gAiParams.temperature)) {
-    params.temperature = gAiParams.temperature;
-  }
-  if (Number.isFinite(gAiParams.top_p)) {
-    params.top_p = gAiParams.top_p;
-  }
-  if (Number.isFinite(gAiParams.presence_penalty)) {
-    params.presence_penalty = gAiParams.presence_penalty;
-  }
-  if (Number.isFinite(gAiParams.frequency_penalty)) {
-    params.frequency_penalty = gAiParams.frequency_penalty;
-  }
-  if (Number.isInteger(gAiParams.seed) && gAiParams.seed >= 0) {
-    params.seed = gAiParams.seed;
-  }
-
-  return params;
-}
-
-function buildPayloadObject(text, criterion) {
-  const payloadObj = {
-    messages: buildMessages(text, criterion),
-    response_format: RESPONSE_FORMAT,
-    ...buildOpenAiParams(),
-  };
+function buildPayload(text, criterion) {
+  let payloadObj = Object.assign({
+    prompt: buildPrompt(text, criterion)
+  }, gAiParams);
   if (gModel) {
     payloadObj.model = gModel;
   }
-  return payloadObj;
+  return JSON.stringify(payloadObj);
 }
 
 function reportParseError(message, detail) {
@@ -363,81 +290,78 @@ function reportParseError(message, detail) {
   }
 }
 
-function extractMessageContent(content) {
-  if (typeof content === "string") {
-    return { text: content, refusal: "" };
-  }
-  if (!Array.isArray(content)) {
-    return { text: "", refusal: "" };
-  }
+function extractLastJsonObject(text) {
+  let last = null;
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
 
-  const textParts = [];
-  const refusalParts = [];
-  for (const part of content) {
-    if (!part || typeof part !== "object") {
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "\"") {
+        inString = false;
+      }
       continue;
     }
-    if (part.type === "text" && typeof part.text === "string") {
-      textParts.push(part.text);
+    if (ch === "\"") {
+      inString = true;
+      continue;
     }
-    if (part.type === "refusal" && typeof part.refusal === "string") {
-      refusalParts.push(part.refusal);
+    if (ch === "{") {
+      if (depth === 0) {
+        start = i;
+      }
+      depth += 1;
+      continue;
+    }
+    if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start !== -1) {
+        last = text.slice(start, i + 1);
+        start = -1;
+      }
     }
   }
 
-  return {
-    text: textParts.join("\n").trim(),
-    refusal: refusalParts.join("\n").trim(),
-  };
+  return last;
 }
 
 function parseMatch(result) {
-  const message = result?.choices?.[0]?.message;
-  if (!message || typeof message !== "object") {
-    reportParseError("AI response missing assistant message.", JSON.stringify(result).slice(0, 800));
-    return { matched: false, reason: "" };
-  }
-
-  if (typeof message.refusal === "string" && message.refusal.trim()) {
-    reportParseError("Model refused classification request.", message.refusal.slice(0, 800));
-    return { matched: false, reason: message.refusal.trim() };
-  }
-
-  if (message.parsed && typeof message.parsed === "object") {
-    const parsed = message.parsed;
-    if (typeof parsed.match === "boolean" && typeof parsed.reason === "string") {
-      return { matched: parsed.match, reason: parsed.reason };
-    }
-  }
-
-  const extracted = extractMessageContent(message.content);
-  if (extracted.refusal) {
-    reportParseError("Model refused classification request.", extracted.refusal.slice(0, 800));
-    return { matched: false, reason: extracted.refusal };
-  }
-  if (!extracted.text) {
-    reportParseError("AI response missing assistant message content.", JSON.stringify(message).slice(0, 800));
+  const rawText = result.choices?.[0]?.text || "";
+  const candidate = extractLastJsonObject(rawText);
+  if (!candidate) {
+    reportParseError("No JSON object found in AI response.", rawText.slice(0, 800));
     return { matched: false, reason: "" };
   }
 
   let obj;
   try {
-    obj = JSON.parse(extracted.text);
+    obj = JSON.parse(candidate);
   } catch (e) {
-    reportParseError("Failed to parse JSON from AI response.", extracted.text.slice(0, 800));
+    reportParseError("Failed to parse JSON from AI response.", candidate.slice(0, 800));
     return { matched: false, reason: "" };
   }
 
-  if (typeof obj?.match !== "boolean") {
-    reportParseError("AI response missing valid match boolean.", extracted.text.slice(0, 800));
-    return { matched: false, reason: "" };
-  }
-  if (typeof obj?.reason !== "string") {
-    reportParseError("AI response missing valid reason string.", extracted.text.slice(0, 800));
-    return { matched: false, reason: "" };
+  const matchValue = Object.prototype.hasOwnProperty.call(obj, "match") ? obj.match : obj.matched;
+  const matched = matchValue === true;
+  if (matchValue !== true && matchValue !== false) {
+    reportParseError("AI response missing valid match boolean.", candidate.slice(0, 800));
   }
 
-  return { matched: obj.match, reason: obj.reason };
+  const reasonValue = obj.reason ?? obj.reasoning ?? obj.explaination;
+  const reason = typeof reasonValue === "string" ? reasonValue : "";
+
+  return { matched, reason };
 }
 
 function cacheEntry(cacheKey, matched, reason) {
@@ -503,10 +427,9 @@ async function classifyText(text, criterion, cacheKey = null) {
     return cached;
   }
 
-  const payloadObj = buildPayloadObject(text, criterion);
-  const payload = JSON.stringify(payloadObj);
+  const payload = buildPayload(text, criterion);
   try {
-    await storage.local.set({ lastPayload: payloadObj });
+    await storage.local.set({ lastPayload: JSON.parse(payload) });
   } catch (e) {
     aiLog('failed to save last payload', { level: 'warn' }, e);
   }

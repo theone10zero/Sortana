@@ -10,7 +10,7 @@ This file provides guidelines for codex agents contributing to the Sortana proje
 - `options/`: The options page HTML, JavaScript and bundled Bulma CSS (v1.0.3).
 - `details.html` and `details.js`: View AI reasoning and clear cache for a message.
 - `resources/`: Images and other static files.
-- `prompt_templates/`: Provider-specific templated message formats for non-OpenAI flows (qwen, mistral, harmony, plus legacy openai template material kept in-repo).
+- `prompt_templates/`: Prompt template files for the AI service (openai, qwen, mistral, harmony).
 - `build-xpi.ps1`: PowerShell script to package the extension.
 - `build-xpi.sh`: Bash script to package the extension.
 - `resources/svg2img.ps1`: PowerShell script to regenerate themed PNG icons from SVGs.
@@ -35,10 +35,10 @@ There are currently no automated tests for this project. If you add tests in the
 
 ## Endpoint Notes
 
-Sortana targets `POST /v1/chat/completions`. The endpoint value stored in settings is a base URL; the full request URL is constructed by appending `/v1/chat/completions` (adding a slash when needed) and defaulting to `https://` if no scheme is provided. Endpoint normalization strips a trailing `/v1`, `/v1/chat/completions`, `/v1/completions`, or `/v1/models`.
+Sortana targets the `/v1/completions` API. The endpoint value stored in settings is a base URL; the full request URL is constructed by appending `/v1/completions` (adding a slash when needed) and defaulting to `https://` if no scheme is provided.
 The options page can query `/v1/models` from the same base URL to populate the Model dropdown; selecting **None** omits the `model` field from the request payload.
 Advanced options allow an optional API key plus `OpenAI-Organization` and `OpenAI-Project` headers; these headers are only sent when values are provided.
-Requests use a Chat Completions `messages` array and ask for strict JSON schema output via `response_format`. Responses are parsed from `choices[0].message`, with `match` as a boolean and `reason` as a short string. Unsupported OpenAI sampling fields are filtered out, and the saved `max_tokens` setting is translated to `max_completion_tokens`.
+Responses are expected to include a JSON object with `match` (or `matched`) plus a short `reason` string; the parser extracts the last JSON object in the response text and ignores any surrounding commentary.
 
 ## Documentation
 

@@ -4,21 +4,22 @@
 
 Sortana is an experimental Thunderbird add-on that integrates an AI-powered filter rule. 
 It allows you to classify email messages by sending their contents to a configurable
-HTTP endpoint. Sortana uses `POST /v1/chat/completions`; the options page stores a
-base URL and appends `/v1/chat/completions` when sending classification requests.
-The same base URL is used with `/v1/models` when refreshing the model list.
-Classification requests ask the model for structured JSON output with a required
-`match` boolean and `reason` string.
+HTTP endpoint. Sortana uses the `/v1/completions` API; the options page stores a base
+URL and appends `/v1/completions` when sending requests. The endpoint should respond
+with JSON indicating whether the message meets a specified criterion, including a
+short reasoning summary.
+Responses are parsed by extracting the last JSON object in the response text and
+expecting a `match` (or `matched`) boolean plus a `reason` string.
 
 ## Features
 
 - **Configurable endpoint** – set the classification service base URL on the options page.
 - **Model selection** – load available models from the endpoint and choose one (or omit the model field).
 - **Optional OpenAI auth headers** – provide an API key plus optional organization/project headers when needed.
-- **Request formats** – use native OpenAI chat messages or choose Qwen, Mistral, Harmony (gpt-oss), or a custom templated message format.
+- **Prompt templates** – choose between OpenAI/ChatML, Qwen, Mistral, Harmony (gpt-oss), or provide your own custom template.
 - **Custom system prompts** – tailor the instructions sent to the model for more precise results.
 - **Persistent result caching** – classification results and reasoning are saved to disk so messages aren't re-evaluated across restarts.
-- **Advanced parameters** – tune generation settings like temperature and top‑p from the options page. Unsupported OpenAI sampling fields are filtered out automatically.
+- **Advanced parameters** – tune generation settings like temperature, top‑p and more from the options page.
 - **Markdown conversion** – optionally convert HTML bodies to Markdown before sending them to the AI service.
 - **Debug logging** – optional colorized logs help troubleshoot interactions with the AI service.
 - **Debug tab** – view the last request payload and a diff between the unaltered message text and the final prompt.
@@ -82,11 +83,10 @@ Sortana is implemented entirely with documented MailExtension/WebExtension APIs.
 ## Usage
 
 1. Open the add-on's options and set the base URL of your classification service
-   (Sortana will append `/v1/chat/completions`). Endpoints ending in `/v1`,
-   `/v1/chat/completions`, `/v1/completions`, or `/v1/models` are normalized back
-   to the same base URL. Use the Model dropdown to load `/v1/models` and select a
-   model or choose **None** to omit the `model` field. Advanced settings include
-   optional API key, organization, and project headers for OpenAI-hosted endpoints.
+   (Sortana will append `/v1/completions`). Use the Model dropdown to load
+   `/v1/models` and select a model or choose **None** to omit the `model` field.
+   Advanced settings include optional API key, organization, and project headers
+   for OpenAI-hosted endpoints.
  2. Use the **Classification Rules** section to add a criterion and optional
    actions such as tagging, moving, copying, forwarding, replying,
    deleting or archiving a message when it matches. Drag rules to
@@ -100,11 +100,6 @@ Sortana is implemented entirely with documented MailExtension/WebExtension APIs.
 3. Save your settings. New mail will be evaluated automatically using the
    configured rules.
 4. If the toolbar icon shows a red X, it will clear after a few seconds. Open the Errors tab in Options to review the latest failures.
-
-OpenAI Chat requests are sent with a `messages` array plus a strict
-`response_format` JSON schema. Sortana maps the saved `max_tokens` setting to
-`max_completion_tokens` for Chat Completions and only forwards OpenAI-supported
-sampling fields.
 
 ### Example Filters
 
