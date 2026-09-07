@@ -7,8 +7,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const { DEFAULT_AI_PARAMS } = await import(browser.runtime.getURL('modules/defaultParams.js'));
     const defaults = await storage.local.get([
         'endpoint',
-        'templateName',
-        'customTemplate',
         'customSystemPrompt',
         'model',
         'apiKey',
@@ -163,21 +161,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function fetchModels(preferredModel = '') {
         if (!modelSelect || !refreshModelsBtn) return;
         const modelsUrl = AiClassifier.buildModelsUrl(endpointInput.value);
+        const selectedModel = preferredModel || modelSelect.value;
         if (!modelsUrl) {
+            logger.aiLog('[options] model refresh skipped: invalid endpoint', { level: 'warn' }, {
+                endpoint: endpointInput.value
+            });
             setModelHelp('Set a valid endpoint to load models.', true);
-            populateModelOptions([], preferredModel || modelSelect.value);
+            populateModelOptions([], selectedModel);
             return;
         }
 
         refreshModelsBtn.disabled = true;
         setModelHelp('Loading models...');
+        const headers = buildAuthHeaders();
+        logger.aiLog('[options] loading models', {}, {
+            endpoint: endpointInput.value,
+            modelsUrl,
+            selectedModel,
+            hasAuthorization: typeof headers.Authorization === 'string',
+            hasOrganization: typeof headers['OpenAI-Organization'] === 'string',
+            hasProject: typeof headers['OpenAI-Project'] === 'string'
+        });
 
         try {
-            const response = await fetch(modelsUrl, { method: 'GET', headers: buildAuthHeaders() });
+            const response = await fetch(modelsUrl, { method: 'GET', headers });
+            logger.aiLog('[options] model refresh response received', {}, {
+                status: response.status,
+                ok: response.ok,
+                contentType: response.headers.get('content-type') || ''
+            });
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
             const data = await response.json();
+            logger.aiLog('[options] model refresh payload parsed', {}, {
+                payloadType: Array.isArray(data) ? 'array' : typeof data,
+                hasDataArray: Array.isArray(data?.data),
+                hasModelsArray: Array.isArray(data?.models),
+                topLevelKeys: data && typeof data === 'object' && !Array.isArray(data)
+                    ? Object.keys(data)
+                    : []
+            });
             let models = [];
             if (Array.isArray(data?.data)) {
                 models = data.data.map(model => model?.id ?? model?.name ?? model?.model ?? '').filter(Boolean);
@@ -187,12 +211,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                 models = data.map(model => model?.id ?? model?.name ?? model?.model ?? model).filter(Boolean);
             }
             models = [...new Set(models)];
-            populateModelOptions(models, preferredModel || modelSelect.value);
+            logger.aiLog('[options] model refresh parsed models', {}, {
+                count: models.length,
+                models
+            });
+            populateModelOptions(models, selectedModel);
             setModelHelp(models.length ? `Loaded ${models.length} model${models.length === 1 ? '' : 's'}.` : 'No models returned.');
         } catch (e) {
             logger.aiLog('[options] failed to load models', { level: 'warn' }, e);
-            setModelHelp('Failed to load models. Check the endpoint and network.', true);
-            populateModelOptions([], preferredModel || modelSelect.value);
+            const message = String(e?.message || e || '');
+            const isLikelyCors = e instanceof TypeError || /Failed to fetch|NetworkError|Load failed/i.test(message);
+            setModelHelp(
+                isLikelyCors
+                    ? 'Failed to load models. The server responded, but Thunderbird may have blocked access to the response. Check CORS on the AI server and verify the endpoint is reachable from the add-on.'
+                    : 'Failed to load models. Check the endpoint, HTTP status, and network.',
+                true
+            );
+            populateModelOptions([], selectedModel);
         } finally {
             refreshModelsBtn.disabled = false;
         }
@@ -200,34 +235,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     populateModelOptions([], storedModel);
     refreshModelsBtn?.addEventListener('click', () => {
+        logger.aiLog('[options] model refresh button clicked');
         fetchModels(modelSelect.value);
     });
-
-    const templates = {
-        openai: browser.i18n.getMessage('template.openai'),
-        qwen: browser.i18n.getMessage('template.qwen'),
-        mistral: browser.i18n.getMessage('template.mistral'),
-        harmony: browser.i18n.getMessage('template.harmony'),
-        custom: browser.i18n.getMessage('template.custom')
-    };
-    const templateSelect = document.getElementById('template');
-    for (const [value, label] of Object.entries(templates)) {
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = label;
-        templateSelect.appendChild(opt);
-    }
-    templateSelect.value = defaults.templateName || 'openai';
-
-    const customBox = document.getElementById('custom-template-container');
-    const customTemplate = document.getElementById('custom-template');
-    customTemplate.value = defaults.customTemplate || '';
-
-    function updateVisibility() {
-        customBox.classList.toggle('is-hidden', templateSelect.value !== 'custom');
-    }
-    templateSelect.addEventListener('change', updateVisibility);
-    updateVisibility();
 
     const advancedBox = document.getElementById('advanced-options');
     const advancedBtn = document.getElementById('toggle-advanced');
@@ -1047,8 +1057,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const apiKey = apiKeyInput?.value.trim() || '';
         const openaiOrganization = openaiOrgInput?.value.trim() || '';
         const openaiProject = openaiProjectInput?.value.trim() || '';
-        const templateName = templateSelect.value;
-        const customTemplateText = customTemplate.value;
         const customSystemPrompt = systemBox.value;
         const aiParamsSave = {};
         for (const key of Object.keys(DEFAULT_AI_PARAMS)) {
@@ -1112,10 +1120,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tokenReduction = tokenReductionToggle.checked;
         const showDebugTab = debugTabToggle.checked;
         const theme = themeSelect.value;
-        await storage.local.set({ endpoint, model, apiKey, openaiOrganization, openaiProject, templateName, customTemplate: customTemplateText, customSystemPrompt, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
+        await storage.local.set({ endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
+        await storage.local.remove(['templateName', 'customTemplate']);
         await applyTheme(theme);
         try {
-            await AiClassifier.setConfig({ endpoint, model, apiKey, openaiOrganization, openaiProject, templateName, customTemplate: customTemplateText, customSystemPrompt, aiParams: aiParamsSave, debugLogging });
+            await AiClassifier.setConfig({ endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging });
             logger.setDebug(debugLogging);
         } catch (e) {
             logger.aiLog('[options] failed to apply config', {level: 'error'}, e);

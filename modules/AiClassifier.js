@@ -4,7 +4,7 @@ import { DEFAULT_AI_PARAMS } from "./defaultParams.js";
 
 const storage = (globalThis.messenger ?? globalThis.browser).storage;
 
-const COMPLETIONS_PATH = "/v1/completions";
+const CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
 const MODELS_PATH = "/v1/models";
 
 const SYSTEM_PREFIX = `You are an email-classification assistant.
@@ -22,10 +22,7 @@ Do not add any other keys, text, or formatting.`;
 
 let gEndpointBase = "http://127.0.0.1:5000";
 let gEndpoint = buildEndpointUrl(gEndpointBase);
-let gTemplateName = "openai";
-let gCustomTemplate = "";
 let gCustomSystemPrompt = DEFAULT_CUSTOM_SYSTEM_PROMPT;
-let gTemplateText = "";
 
 let gAiParams = Object.assign({}, DEFAULT_AI_PARAMS);
 let gModel = "";
@@ -44,7 +41,7 @@ function normalizeEndpointBase(endpoint) {
   if (!base) {
     return "";
   }
-  base = base.replace(/\/v1\/(completions|models)\/?$/i, "");
+  base = base.replace(/\/v1\/(chat\/completions|completions|models)\/?$/i, "");
   return base;
 }
 
@@ -55,7 +52,7 @@ function buildEndpointUrl(endpointBase) {
   }
   const withScheme = /^https?:\/\//i.test(base) ? base : `https://${base}`;
   const needsSlash = withScheme.endsWith("/");
-  const path = COMPLETIONS_PATH.replace(/^\//, "");
+  const path = CHAT_COMPLETIONS_PATH.replace(/^\//, "");
   return `${withScheme}${needsSlash ? "" : "/"}${path}`;
 }
 
@@ -147,21 +144,6 @@ async function saveCache(updatedKey, updatedValue) {
 }
 
 
-async function loadTemplate(name) {
-  try {
-    const url = typeof browser !== "undefined" && browser.runtime?.getURL
-      ? browser.runtime.getURL(`prompt_templates/${name}.txt`)
-      : `resource://aifilter/prompt_templates/${name}.txt`;
-    const res = await fetch(url);
-    if (res.ok) {
-      return await res.text();
-    }
-  } catch (e) {
-    aiLog(`Failed to load template '${name}':`, {level: 'error'}, e);
-  }
-  return "";
-}
-
 async function setConfig(config = {}) {
   if (typeof config.endpoint === "string") {
     const base = normalizeEndpointBase(config.endpoint);
@@ -169,12 +151,6 @@ async function setConfig(config = {}) {
       gEndpointBase = base;
     }
     gEndpoint = buildEndpointUrl(gEndpointBase);
-  }
-  if (config.templateName) {
-    gTemplateName = config.templateName;
-  }
-  if (typeof config.customTemplate === "string") {
-    gCustomTemplate = config.customTemplate;
   }
   if (typeof config.customSystemPrompt === "string") {
     gCustomSystemPrompt = config.customSystemPrompt;
@@ -201,17 +177,11 @@ async function setConfig(config = {}) {
   if (typeof config.debugLogging === "boolean") {
     setDebug(config.debugLogging);
   }
-  if (gTemplateName === "custom") {
-    gTemplateText = gCustomTemplate;
-  } else {
-    gTemplateText = await loadTemplate(gTemplateName);
-  }
   if (!gEndpoint) {
     gEndpoint = buildEndpointUrl(gEndpointBase);
   }
   aiLog(`[AiClassifier] Endpoint base set to ${gEndpointBase}`, {debug: true});
   aiLog(`[AiClassifier] Endpoint set to ${gEndpoint}`, {debug: true});
-  aiLog(`[AiClassifier] Template set to ${gTemplateName}`, {debug: true});
 }
 
 function buildAuthHeaders() {
@@ -234,13 +204,7 @@ function buildSystemPrompt() {
 
 function buildPrompt(body, criterion) {
   aiLog(`[AiClassifier] Building prompt with criterion: "${criterion}"`, {debug: true});
-  const data = {
-    system: buildSystemPrompt(),
-    email: body,
-    query: criterion,
-  };
-  let template = gTemplateText || "";
-  return template.replace(/{{\s*(\w+)\s*}}/g, (m, key) => data[key] || "");
+  return `**Email Contents**\n\`\`\`\n${body}\n\`\`\`\nClassification Criterion: ${criterion}`;
 }
 
 function getCachedResult(cacheKey) {
@@ -265,7 +229,10 @@ function getReason(cacheKey) {
 
 function buildPayload(text, criterion) {
   let payloadObj = Object.assign({
-    prompt: buildPrompt(text, criterion)
+    messages: [
+      { role: "system", content: buildSystemPrompt() },
+      { role: "user", content: buildPrompt(text, criterion) }
+    ]
   }, gAiParams);
   if (gModel) {
     payloadObj.model = gModel;
@@ -337,7 +304,11 @@ function extractLastJsonObject(text) {
 }
 
 function parseMatch(result) {
-  const rawText = result.choices?.[0]?.text || "";
+  const rawText = result.choices?.[0]?.message?.content;
+  if (typeof rawText !== "string") {
+    reportParseError("Chat response missing text content.", JSON.stringify(result).slice(0, 800));
+    return { matched: false, reason: "" };
+  }
   const candidate = extractLastJsonObject(rawText);
   if (!candidate) {
     reportParseError("No JSON object found in AI response.", rawText.slice(0, 800));

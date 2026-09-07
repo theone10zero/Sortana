@@ -484,7 +484,7 @@ async function clearCacheForMessages(idsInput) {
     }
 
     try {
-        const store = await storage.local.get(["endpoint", "model", "apiKey", "openaiOrganization", "openaiProject", "templateName", "customTemplate", "customSystemPrompt", "aiParams", "debugLogging", "htmlToMarkdown", "stripUrlParams", "altTextImages", "collapseWhitespace", "tokenReduction", "aiRules", "theme", "showDebugTab"]);
+        const store = await storage.local.get(["endpoint", "model", "apiKey", "openaiOrganization", "openaiProject", "customSystemPrompt", "aiParams", "debugLogging", "htmlToMarkdown", "stripUrlParams", "altTextImages", "collapseWhitespace", "tokenReduction", "aiRules", "theme", "showDebugTab"]);
         logger.setDebug(store.debugLogging);
         await AiClassifier.setConfig(store);
         userTheme = store.theme || 'auto';
@@ -514,15 +514,13 @@ async function clearCacheForMessages(idsInput) {
                 aiRules = normalizeRules(newRules);
                 logger.aiLog("aiRules updated from storage change", { debug: true }, aiRules);
             }
-            if (changes.endpoint || changes.model || changes.apiKey || changes.openaiOrganization || changes.openaiProject || changes.templateName || changes.customTemplate || changes.customSystemPrompt || changes.aiParams || changes.debugLogging) {
+            if (changes.endpoint || changes.model || changes.apiKey || changes.openaiOrganization || changes.openaiProject || changes.customSystemPrompt || changes.aiParams || changes.debugLogging) {
                 const config = {};
                 if (changes.endpoint) config.endpoint = changes.endpoint.newValue;
                 if (changes.model) config.model = changes.model.newValue;
                 if (changes.apiKey) config.apiKey = changes.apiKey.newValue;
                 if (changes.openaiOrganization) config.openaiOrganization = changes.openaiOrganization.newValue;
                 if (changes.openaiProject) config.openaiProject = changes.openaiProject.newValue;
-                if (changes.templateName) config.templateName = changes.templateName.newValue;
-                if (changes.customTemplate) config.customTemplate = changes.customTemplate.newValue;
                 if (changes.customSystemPrompt) config.customSystemPrompt = changes.customSystemPrompt.newValue;
                 if (changes.aiParams) {
                     config.aiParams = changes.aiParams.newValue;

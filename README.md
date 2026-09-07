@@ -4,11 +4,12 @@
 
 Sortana is an experimental Thunderbird add-on that integrates an AI-powered filter rule. 
 It allows you to classify email messages by sending their contents to a configurable
-HTTP endpoint. Sortana uses the `/v1/completions` API; the options page stores a base
-URL and appends `/v1/completions` when sending requests. The endpoint should respond
-with JSON indicating whether the message meets a specified criterion, including a
-short reasoning summary.
-Responses are parsed by extracting the last JSON object in the response text and
+HTTP endpoint. Sortana uses the OpenAI-compatible `/v1/chat/completions` API; the options page stores a base
+URL and appends `/v1/chat/completions` when sending requests. Requests contain a system
+message and a user message. The endpoint should respond
+with text in `choices[0].message.content` containing JSON indicating whether the
+message meets a specified criterion, including a short reasoning summary.
+Responses are parsed by extracting the last JSON object in that content and
 expecting a `match` (or `matched`) boolean plus a `reason` string.
 
 ## Features
@@ -16,10 +17,10 @@ expecting a `match` (or `matched`) boolean plus a `reason` string.
 - **Configurable endpoint** – set the classification service base URL on the options page.
 - **Model selection** – load available models from the endpoint and choose one (or omit the model field).
 - **Optional OpenAI auth headers** – provide an API key plus optional organization/project headers when needed.
-- **Prompt templates** – choose between OpenAI/ChatML, Qwen, Mistral, Harmony (gpt-oss), or provide your own custom template.
-- **Custom system prompts** – tailor the instructions sent to the model for more precise results.
+- **Custom system prompts** – tailor the instructions sent as the system message for more precise results.
 - **Persistent result caching** – classification results and reasoning are saved to disk so messages aren't re-evaluated across restarts.
 - **Advanced parameters** – tune generation settings like temperature, top‑p and more from the options page.
+  Provider-specific advanced fields are forwarded as configured and may be rejected by strict OpenAI endpoints.
 - **Markdown conversion** – optionally convert HTML bodies to Markdown before sending them to the AI service.
 - **Debug logging** – optional colorized logs help troubleshoot interactions with the AI service.
 - **Debug tab** – view the last request payload and a diff between the unaltered message text and the final prompt.
@@ -83,7 +84,7 @@ Sortana is implemented entirely with documented MailExtension/WebExtension APIs.
 ## Usage
 
 1. Open the add-on's options and set the base URL of your classification service
-   (Sortana will append `/v1/completions`). Use the Model dropdown to load
+   (Sortana will append `/v1/chat/completions`). Use the Model dropdown to load
    `/v1/models` and select a model or choose **None** to omit the `model` field.
    Advanced settings include optional API key, organization, and project headers
    for OpenAI-hosted endpoints.

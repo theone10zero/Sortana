@@ -10,7 +10,6 @@ This file provides guidelines for codex agents contributing to the Sortana proje
 - `options/`: The options page HTML, JavaScript and bundled Bulma CSS (v1.0.3).
 - `details.html` and `details.js`: View AI reasoning and clear cache for a message.
 - `resources/`: Images and other static files.
-- `prompt_templates/`: Prompt template files for the AI service (openai, qwen, mistral, harmony).
 - `build-xpi.ps1`: PowerShell script to package the extension.
 - `build-xpi.sh`: Bash script to package the extension.
 - `resources/svg2img.ps1`: PowerShell script to regenerate themed PNG icons from SVGs.
@@ -35,10 +34,10 @@ There are currently no automated tests for this project. If you add tests in the
 
 ## Endpoint Notes
 
-Sortana targets the `/v1/completions` API. The endpoint value stored in settings is a base URL; the full request URL is constructed by appending `/v1/completions` (adding a slash when needed) and defaulting to `https://` if no scheme is provided.
+Sortana targets the OpenAI-compatible `/v1/chat/completions` API. The endpoint value stored in settings is a base URL; the full request URL is constructed by appending `/v1/chat/completions` (adding a slash when needed) and defaulting to `https://` if no scheme is provided.
 The options page can query `/v1/models` from the same base URL to populate the Model dropdown; selecting **None** omits the `model` field from the request payload.
 Advanced options allow an optional API key plus `OpenAI-Organization` and `OpenAI-Project` headers; these headers are only sent when values are provided.
-Responses are expected to include a JSON object with `match` (or `matched`) plus a short `reason` string; the parser extracts the last JSON object in the response text and ignores any surrounding commentary.
+Requests use `messages` with system and user roles. Responses are expected to include text in `choices[0].message.content` containing a JSON object with `match` (or `matched`) plus a short `reason` string; the parser extracts the last JSON object in that content and ignores any surrounding commentary.
 
 ## Documentation
 

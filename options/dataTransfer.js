@@ -7,8 +7,6 @@ const KEY_GROUPS = {
         'apiKey',
         'openaiOrganization',
         'openaiProject',
-        'templateName',
-        'customTemplate',
         'customSystemPrompt',
         'aiParams',
         'debugLogging',

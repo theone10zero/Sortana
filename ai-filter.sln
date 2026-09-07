@@ -39,14 +39,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "en-US", "en-US", "{8BEA7793
 		_locales\en-US\messages.json = _locales\en-US\messages.json
 	EndProjectSection
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "prompt_templates", "prompt_templates", "{86516D53-50D4-4FE2-9D8A-977A8F5EBDBD}"
-	ProjectSection(SolutionItems) = preProject
-		prompt_templates\mistral.txt = prompt_templates\mistral.txt
-		prompt_templates\openai.txt = prompt_templates\openai.txt
-		prompt_templates\qwen.txt = prompt_templates\qwen.txt
-		prompt_templates\harmony.txt = prompt_templates\harmony.txt
-	EndProjectSection
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "resources", "resources", "{68A87938-5C2B-49F5-8AAA-8A34FBBFD854}"
 	ProjectSection(SolutionItems) = preProject
 		resources\svg2img.ps1 = resources\svg2img.ps1
