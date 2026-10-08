@@ -8,7 +8,7 @@ This file provides guidelines for codex agents contributing to the Sortana proje
 - `modules/`: Contains reusable JavaScript modules such as `AiClassifier.js`,
   `defaultParams.js` and `themeUtils.js`.
 - `options/`: The options page HTML, JavaScript and bundled Bulma CSS (v1.0.3).
-- `details.html` and `details.js`: View AI reasoning and clear cache for a message.
+- `details.html` and `details.js`: View classification evidence and clear cache for a message.
 - `resources/`: Images and other static files.
 - `build-xpi.ps1`: PowerShell script to package the extension.
 - `build-xpi.sh`: Bash script to package the extension.
@@ -30,14 +30,42 @@ This file provides guidelines for codex agents contributing to the Sortana proje
 
 ## Testing
 
-There are currently no automated tests for this project. If you add tests in the future, specify the commands to run them here. For now, verification must happen manually in Thunderbird. Do **not** run the `ps1` build script or the SVG processing script.
+Run the dependency-free suite with Node.js 22 or newer: `node --test tests/*.test.mjs`.
+The tests mock extension storage, HTTP responses, and Thunderbird rule execution.
+Manual verification in Thunderbird is still required for UI and real-server integration.
+Do **not** run the `ps1` build script or the SVG processing script.
 
 ## Endpoint Notes
 
-Sortana targets the OpenAI-compatible `/v1/chat/completions` API. The endpoint value stored in settings is a base URL; the full request URL is constructed by appending `/v1/chat/completions` (adding a slash when needed) and defaulting to `https://` if no scheme is provided.
-The options page can query `/v1/models` from the same base URL to populate the Model dropdown; selecting **None** omits the `model` field from the request payload.
-Advanced options allow an optional API key plus `OpenAI-Organization` and `OpenAI-Project` headers; these headers are only sent when values are provided.
-Requests use `messages` with system and user roles. Responses are expected to include text in `choices[0].message.content` containing a JSON object with `match` (or `matched`) plus a short `reason` string; the parser extracts the last JSON object in that content and ignores any surrounding commentary.
+Sortana supports `apiType: "chat-completions"` (default) and `"systemone"`.
+Plain adapter modules under `modules/backends/` own request construction and response
+validation; `AiClassifier` owns shared transport, configuration snapshots, threshold
+policy, and caching. The stored endpoint is a base URL. Normalization accepts `/v1`
+and recognized full API paths, preserves proxy prefixes, and defaults to HTTPS
+when no scheme is supplied. Model discovery uses `/v1/models`; **None** omits `model`.
+Bearer authentication is optional for both APIs. Organization/project headers are
+sent only for Chat Completions.
+
+Chat Completions sends system/user messages and extracts the last JSON object from
+`choices[0].message.content`, requiring a `match` or `matched` boolean. SystemOne
+sends prepared email text as `state` and a single `questions.match` of type `noul`.
+It requires `answers.match.type === "noul"` and a finite numeric `noul` in `[0, 1]`.
+No chat generation parameters or system prompt are sent to SystemOne.
+
+The global `decisionThreshold` defaults to 0.5; optional rule-level
+`decisionThreshold` overrides it. UI percentages are stored as numbers in `[0, 1]`.
+Matching uses `probability >= threshold` before display rounding. Details displays
+probabilities in a progress bar with the percentage inside; threshold and model
+appear in its tooltip. Results use the current threshold, never fabricated reasoning or action
+history. No secondary model calls are made.
+
+`classify()` returns structured evidence; `classifyText()` remains a boolean wrapper.
+Failures throw and are never cached. HTTP errors include the request URL and
+JSON server error message when available; SystemOne 404 errors suggest checking
+the running server build and decision-model support. The rule runner stops that email, reports the
+error, and continues the next queued email. Snapshot settings and rules per email.
+`inputCharacterLimit` replaces coupling input truncation to output `max_tokens`;
+it applies with aggressive reduction and migrates from the old effective limit.
 
 ## Documentation
 
@@ -71,10 +99,21 @@ text extracted from all text parts.
 
 ### Cache Strategy
 
-`aiCache` persists classification results. Each key is the SHA‑256 hex of
-`"<message Message-ID>|<criterion>"` and maps to an object with `matched` and `reason`
-properties. Any legacy `aiReasonCache` data is merged into `aiCache` the first
-time the add-on loads after an update.
+`aiCache` persists version 2 inference evidence. Keys are
+`v2:<SHA-256 Message-ID>:<SHA-256 stable configuration/criterion fingerprint>`.
+Include backend, endpoint, model, effective request parameters and preprocessing;
+exclude secrets, actions and thresholds. Recompute SystemOne matches from cached
+probability and current thresholds without automatically executing actions.
+Entries retain a hashed message identifier for clearing across configurations.
+Version 4.0.0 intentionally breaks legacy cache compatibility: legacy caches
+(including `aiReasonCache`) are invalidated because their inference
+configuration is unknown. Import/export validates versioned evidence; storage
+changes refresh the running cache. Maintenance uses `sortana:getCacheSize` to
+count validated entries in the background classifier, rather than raw storage keys.
+Full restoration requires matching settings and rules as well as cache evidence;
+`tests/cacheRestore.test.mjs` exercises export/reinstall/import through the actual
+storage and Details handlers, including changed numeric Thunderbird message IDs. Clearing/importing during inference prevents
+that in-flight result from repopulating the replaced cache.
 
 ### Icon Set Usage
 

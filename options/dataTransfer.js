@@ -1,7 +1,10 @@
 "use strict";
+import { validateSettings, migratedInputLimit } from '../modules/classificationConfig.js';
+import { validCacheEntry } from '../modules/AiClassifier.js';
 const storage = (globalThis.messenger ?? browser).storage;
 const KEY_GROUPS = {
     settings: [
+        'apiType', 'decisionThreshold', 'inputCharacterLimit', 'tokenReduction',
         'endpoint',
         'model',
         'apiKey',
@@ -36,12 +39,15 @@ export async function exportData(categories) {
     URL.revokeObjectURL(url);
 }
 
-export async function importData(file, categories) {
+export async function importData(file, categories = Object.keys(KEY_GROUPS)) {
     const text = await file.text();
     const parsed = JSON.parse(text);
     const data = {};
     for (const key of collectKeys(categories)) {
         if (key in parsed) data[key] = parsed[key];
     }
+    if (categories.includes('settings') && data.inputCharacterLimit === undefined) data.inputCharacterLimit = migratedInputLimit(data);
+    validateSettings(data);
+    if (data.aiCache !== undefined) data.aiCache = Object.fromEntries(Object.entries(data.aiCache || {}).filter(([key, entry]) => validCacheEntry(key, entry)));
     await storage.local.set(data);
 }

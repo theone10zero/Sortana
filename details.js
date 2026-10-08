@@ -51,15 +51,39 @@ async function loadMessage(id) {
       article.className = `message ${color} mb-4`;
       const header = document.createElement('div');
       header.className = 'message-header';
-      header.innerHTML = `<p>${r.criterion}</p>`;
+      const criterion = document.createElement('p');
+      criterion.textContent = r.criterion;
+      header.appendChild(criterion);
       const body = document.createElement('div');
       body.className = 'message-body';
       const status = document.createElement('p');
       status.textContent = r.matched ? 'Matched' : 'Did not match';
-      const pre = document.createElement('pre');
-      pre.textContent = r.reason || '';
-      body.appendChild(status);
-      body.appendChild(pre);
+      if (r.backend === 'systemone') {
+        status.textContent += ' under current threshold';
+        status.classList.add('mb-2');
+        body.appendChild(status);
+        const percentage = r.probability * 100;
+        const bar = document.createElement('div');
+        bar.className = `probability-bar ${color}`;
+        bar.setAttribute('role', 'progressbar');
+        bar.setAttribute('aria-label', 'Match probability');
+        bar.setAttribute('aria-valuemin', '0');
+        bar.setAttribute('aria-valuemax', '100');
+        bar.setAttribute('aria-valuenow', String(percentage));
+        bar.title = `Threshold: ${r.threshold * 100}%${r.model ? ` · Model: ${r.model}` : ''}`;
+        const fill = document.createElement('div');
+        fill.className = 'probability-fill';
+        fill.style.width = `${percentage}%`;
+        const value = document.createElement('span');
+        value.className = 'probability-value';
+        value.textContent = `${percentage.toFixed(2)}%`;
+        bar.append(fill, value);
+        body.appendChild(bar);
+      } else {
+        const pre = document.createElement('pre');
+        pre.textContent = r.reason || '';
+        body.append(status, pre);
+      }
       article.appendChild(header);
       article.appendChild(body);
       container.appendChild(article);

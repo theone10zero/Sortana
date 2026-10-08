@@ -5,7 +5,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const dataTransfer = await import(browser.runtime.getURL('options/dataTransfer.js'));
     const { detectSystemTheme } = await import(browser.runtime.getURL('modules/themeUtils.js'));
     const { DEFAULT_AI_PARAMS } = await import(browser.runtime.getURL('modules/defaultParams.js'));
+    const { validateSettings, migratedInputLimit } = await import(browser.runtime.getURL('modules/classificationConfig.js'));
     const defaults = await storage.local.get([
+        'apiType', 'decisionThreshold', 'inputCharacterLimit',
         'endpoint',
         'customSystemPrompt',
         'model',
@@ -86,6 +88,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         markDirty();
         await applyTheme(themeSelect.value);
     });
+    const apiTypeInput = document.getElementById('api-type');
+    apiTypeInput.value = defaults.apiType || 'chat-completions';
+    const thresholdInput = document.getElementById('decision-threshold');
+    thresholdInput.value = (defaults.decisionThreshold ?? 0.5) * 100;
+    const inputLimit = document.getElementById('input-character-limit');
+    inputLimit.value = migratedInputLimit(defaults);
+    const settingsError = document.getElementById('settings-error');
+    function updateApiControls() {
+        const decision = apiTypeInput.value === 'systemone';
+        document.querySelectorAll('.systemone-only').forEach(el => el.classList.toggle('is-hidden', !decision));
+        for (const id of ['system-instructions', 'openai-organization', 'openai-project', ...Object.keys(DEFAULT_AI_PARAMS)]) {
+            document.getElementById(id)?.closest('.field')?.classList.toggle('is-hidden', decision);
+        }
+        document.getElementById('reset-system').classList.toggle('is-hidden', decision);
+        updateEndpointPreview();
+    }
+    apiTypeInput.addEventListener('change', updateApiControls);
     const endpointInput = document.getElementById('endpoint');
     const endpointPreview = document.getElementById('endpoint-preview');
     const fallbackEndpoint = 'http://127.0.0.1:5000';
@@ -94,13 +113,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     endpointInput.value = endpointBase;
 
     function updateEndpointPreview() {
-        const resolved = AiClassifier.buildEndpointUrl(endpointInput.value);
+        const resolved = AiClassifier.buildEndpointUrl(endpointInput.value, apiTypeInput.value);
         endpointPreview.textContent = resolved
             ? `Resolved endpoint: ${resolved}`
             : 'Resolved endpoint: (invalid)';
     }
     endpointInput.addEventListener('input', updateEndpointPreview);
-    updateEndpointPreview();
+    updateApiControls();
 
     const modelSelect = document.getElementById('model-select');
     const refreshModelsBtn = document.getElementById('refresh-models');
@@ -148,11 +167,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             headers.Authorization = `Bearer ${apiKey}`;
         }
         const organization = openaiOrgInput?.value.trim();
-        if (organization) {
+        if (organization && apiTypeInput.value === 'chat-completions') {
             headers["OpenAI-Organization"] = organization;
         }
         const project = openaiProjectInput?.value.trim();
-        if (project) {
+        if (project && apiTypeInput.value === 'chat-completions') {
             headers["OpenAI-Project"] = project;
         }
         return headers;
@@ -467,7 +486,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const perDayEl = document.getElementById('per-day');
     let timingLogged = false;
     ruleCountEl.textContent = (defaults.aiRules || []).length;
-    cacheCountEl.textContent = defaults.aiCache ? Object.keys(defaults.aiCache).length : 0;
+    cacheCountEl.textContent = '…';
 
     function createActionRow(action = {type: 'tag'}) {
         const row = document.createElement('div');
@@ -861,14 +880,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             body.appendChild(folderBox);
 
             article.appendChild(header);
+            const thresholdField = document.createElement('label');
+            thresholdField.className = 'field systemone-only';
+            thresholdField.classList.toggle('is-hidden', apiTypeInput.value !== 'systemone');
+            thresholdField.textContent = 'Match probability threshold (%) — blank uses default';
+            const override = document.createElement('input');
+            override.className = 'input decision-threshold';
+            override.type = 'number';
+            override.min = '0'; override.max = '100'; override.step = 'any';
+            override.value = rule.decisionThreshold === undefined ? '' : rule.decisionThreshold * 100;
+            thresholdField.appendChild(override);
+            body.appendChild(thresholdField);
             article.appendChild(body);
 
             rulesContainer.appendChild(article);
         }
     }
 
-    addRuleBtn.addEventListener('click', () => {
-        const data = [...rulesContainer.querySelectorAll('.rule')].map(ruleEl => {
+    function readRules() {
+        return [...rulesContainer.querySelectorAll('.rule')].map(ruleEl => {
             const criterion = ruleEl.querySelector('.criterion').value;
             const actions = [...ruleEl.querySelectorAll('.action-row')].map(row => {
                 const type = row.querySelector('select').value;
@@ -890,8 +920,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (type === 'flag') {
                     return { type, flagged: row.querySelector('.flag-select').value === 'true' };
                 }
-                if (type === 'delete' || type === 'archive') {
-                    return { type };
+                if (type === 'forward') {
+                    return { type, address: row.querySelector('.forward-input').value.trim() };
+                }
+                if (type === 'reply') {
+                    return { type, replyType: row.querySelector('.reply-select').value };
                 }
                 return { type };
             });
@@ -903,6 +936,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const accounts = [...(ruleEl.querySelector('.account-select')?.selectedOptions || [])].map(o => o.value);
             const folders = [...(ruleEl.querySelector('.folder-filter-select')?.selectedOptions || [])].map(o => o.value);
             const rule = { criterion, actions, enabled };
+            const override = ruleEl.querySelector('.decision-threshold').value;
+            if (override.trim() !== '') rule.decisionThreshold = Number(override) / 100;
             if (unreadOnly) rule.unreadOnly = true;
             if (stopProcessing) rule.stopProcessing = true;
             if (!isNaN(minAgeDays)) rule.minAgeDays = minAgeDays;
@@ -911,6 +946,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (folders.length) rule.folders = folders;
             return rule;
         });
+    }
+    addRuleBtn.addEventListener('click', () => {
+        const data = readRules();
         data.push({ criterion: '', actions: [], unreadOnly: false, stopProcessing: false, enabled: true, accounts: [], folders: [] });
         renderRules(data);
     });
@@ -927,6 +965,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (r.moveTo) actions.push({ type: 'move', folder: r.moveTo });
         if (r.copyTarget || r.copyTo) actions.push({ type: 'copy', copyTarget: r.copyTarget || r.copyTo });
         const rule = { criterion: r.criterion, actions };
+        if (r.decisionThreshold !== undefined) rule.decisionThreshold = r.decisionThreshold;
         if (r.stopProcessing) rule.stopProcessing = true;
         if (r.unreadOnly) rule.unreadOnly = true;
         if (typeof r.minAgeDays === 'number') rule.minAgeDays = r.minAgeDays;
@@ -996,8 +1035,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         try {
-            const { aiCache } = await storage.local.get('aiCache');
-            cacheCountEl.textContent = aiCache ? Object.keys(aiCache).length : 0;
+            const { count } = await browser.runtime.sendMessage({ type: 'sortana:getCacheSize' });
+            cacheCountEl.textContent = count;
         } catch {
             cacheCountEl.textContent = '?';
         }
@@ -1044,14 +1083,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('import-data').addEventListener('click', () => importInput.click());
     importInput.addEventListener('change', async () => {
         if (importInput.files.length) {
-            await dataTransfer.importData(importInput.files[0], selectedCategories());
-            location.reload();
+            try {
+                await dataTransfer.importData(importInput.files[0], selectedCategories());
+                location.reload();
+            } catch (error) {
+                window.alert(`Import failed: ${error.message}`);
+            }
         }
     });
 
     initialized = true;
 
     document.getElementById('save').addEventListener('click', async () => {
+        settingsError.textContent = '';
+        const apiType = apiTypeInput.value;
+        const decisionThreshold = thresholdInput.value.trim() === '' ? NaN : Number(thresholdInput.value) / 100;
+        const inputCharacterLimit = Number(inputLimit.value);
         const endpoint = endpointInput.value.trim();
         const model = modelSelect?.value || '';
         const apiKey = apiKeyInput?.value.trim() || '';
@@ -1068,63 +1115,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         const debugLogging = debugToggle.checked;
         const htmlToMarkdown = htmlToggle.checked;
-        const rules = [...rulesContainer.querySelectorAll('.rule')].map(ruleEl => {
-            const criterion = ruleEl.querySelector('.criterion').value;
-            const actions = [...ruleEl.querySelectorAll('.action-row')].map(row => {
-                const type = row.querySelector('select').value;
-                if (type === 'tag') {
-                    return { type, tagKey: row.querySelector('.tag-select').value };
-                }
-                if (type === 'move') {
-                    return { type, folder: row.querySelector('.folder-select').value };
-                }
-                if (type === 'copy') {
-                    return { type, copyTarget: row.querySelector('.folder-select').value };
-                }
-                if (type === 'junk') {
-                    return { type, junk: row.querySelector('.junk-select').value === 'true' };
-                }
-                if (type === 'read') {
-                    return { type, read: row.querySelector('.read-select').value === 'true' };
-                }
-                if (type === 'flag') {
-                    return { type, flagged: row.querySelector('.flag-select').value === 'true' };
-                }
-                if (type === 'forward') {
-                    return { type, address: row.querySelector('.forward-input').value.trim() };
-                }
-                if (type === 'reply') {
-                    return { type, replyType: row.querySelector('.reply-select').value };
-                }
-                return { type };
-            });
-            const stopProcessing = ruleEl.querySelector('.stop-processing')?.checked;
-            const unreadOnly = ruleEl.querySelector('.unread-only')?.checked;
-            const enabled = ruleEl.dataset.enabled !== 'false';
-            const minAgeDays = parseFloat(ruleEl.querySelector('.min-age')?.value);
-            const maxAgeDays = parseFloat(ruleEl.querySelector('.max-age')?.value);
-            const accounts = [...(ruleEl.querySelector('.account-select')?.selectedOptions || [])].map(o => o.value);
-            const folders = [...(ruleEl.querySelector('.folder-filter-select')?.selectedOptions || [])].map(o => o.value);
-            const rule = { criterion, actions, enabled };
-            if (unreadOnly) rule.unreadOnly = true;
-            if (stopProcessing) rule.stopProcessing = true;
-            if (!isNaN(minAgeDays)) rule.minAgeDays = minAgeDays;
-            if (!isNaN(maxAgeDays)) rule.maxAgeDays = maxAgeDays;
-            if (accounts.length) rule.accounts = accounts;
-            if (folders.length) rule.folders = folders;
-            return rule;
-        }).filter(r => r.criterion);
+        const invalidThreshold = [...document.querySelectorAll('.decision-threshold'), thresholdInput, inputLimit].find(el => !el.checkValidity());
+        if (invalidThreshold) {
+            settingsError.textContent = 'Enter thresholds from 0% to 100% and a positive whole-number character limit.';
+            return;
+        }
+        const rules = readRules().filter(r => r.criterion);
         const stripUrlParams = stripUrlToggle.checked;
         const altTextImages = altTextToggle.checked;
         const collapseWhitespace = collapseWhitespaceToggle.checked;
         const tokenReduction = tokenReductionToggle.checked;
         const showDebugTab = debugTabToggle.checked;
         const theme = themeSelect.value;
-        await storage.local.set({ endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
+        try { validateSettings({ apiType, decisionThreshold, inputCharacterLimit, aiRules: rules }); }
+        catch (error) { settingsError.textContent = error.message; return; }
+        await storage.local.set({ apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
         await storage.local.remove(['templateName', 'customTemplate']);
         await applyTheme(theme);
         try {
-            await AiClassifier.setConfig({ endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging });
+            await AiClassifier.setConfig({ apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging });
             logger.setDebug(debugLogging);
         } catch (e) {
             logger.aiLog('[options] failed to apply config', {level: 'error'}, e);

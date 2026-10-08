@@ -4,13 +4,11 @@
 
 Sortana is an experimental Thunderbird add-on that integrates an AI-powered filter rule. 
 It allows you to classify email messages by sending their contents to a configurable
-HTTP endpoint. Sortana uses the OpenAI-compatible `/v1/chat/completions` API; the options page stores a base
-URL and appends `/v1/chat/completions` when sending requests. Requests contain a system
-message and a user message. The endpoint should respond
-with text in `choices[0].message.content` containing JSON indicating whether the
-message meets a specified criterion, including a short reasoning summary.
-Responses are parsed by extracting the last JSON object in that content and
-expecting a `match` (or `matched`) boolean plus a `reason` string.
+HTTP endpoint. Choose **Chat Completions** for an OpenAI-compatible
+`/v1/chat/completions` service or **SystemOne** for decision models served through
+`/v1/systemone`. Chat Completions returns a match boolean and textual explanation;
+SystemOne returns a match probability, compared against a configurable threshold.
+The options page stores a base URL and shows the resolved request URL.
 
 ## Features
 
@@ -19,7 +17,7 @@ expecting a `match` (or `matched`) boolean plus a `reason` string.
 - **Optional OpenAI auth headers** – provide an API key plus optional organization/project headers when needed.
 - **Custom system prompts** – tailor the instructions sent as the system message for more precise results.
 - **Persistent result caching** – classification results and reasoning are saved to disk so messages aren't re-evaluated across restarts.
-- **Advanced parameters** – tune generation settings like temperature, top‑p and more from the options page.
+- **Advanced parameters (Chat Completions)** – tune generation settings like temperature, top‑p and more from the options page.
   Provider-specific advanced fields are forwarded as configured and may be rejected by strict OpenAI endpoints.
 - **Markdown conversion** – optionally convert HTML bodies to Markdown before sending them to the AI service.
 - **Debug logging** – optional colorized logs help troubleshoot interactions with the AI service.
@@ -33,7 +31,7 @@ expecting a `match` (or `matched`) boolean plus a `reason` string.
 - **Status icons** – toolbar icons show when classification is in progress and briefly display success states. If a failure occurs the icon turns red briefly before returning to normal.
 - **Error notification** – failed classification displays a notification in Thunderbird.
 - **Session error log** – the Errors tab (visible only when errors occur) shows errors recorded since the last add-on start.
-- **View reasoning** – inspect why rules matched via the Details popup.
+- **View results** – inspect chat explanations or SystemOne probabilities and thresholds in the Details popup.
 - **Cache management** – clear cached results from the context menu or options page.
 - **Queue & timing stats** – monitor processing time on the Maintenance tab.
 - **Packaging scripts** – `build-xpi.ps1` (PowerShell) or `build-xpi.sh` (bash) build an XPI ready for installation.
@@ -42,19 +40,91 @@ expecting a `match` (or `matched`) boolean plus a `reason` string.
 
 ### Cache Storage
 
-Classification results are stored under the `aiCache` key in extension storage.
-Each entry maps a SHA‑256 hash of `"<message Message-ID>|<criterion>"` to an object
-containing `matched` and `reason` fields. Older installations with a separate
-`aiReasonCache` will be migrated automatically on startup.
+Classification results are stored under `aiCache` using version 2 entries. Keys
+combine a hashed Message-ID with a fingerprint of the criterion, backend,
+endpoint, selected model, effective request settings, and preprocessing settings.
+Credentials and thresholds are excluded. SystemOne probabilities are retained at
+full precision; changing a threshold reuses the evidence without another request.
+Changing inference settings requires a fresh classification. If the model behind
+an unchanged server/model alias changes, clear the cache manually.
+
+**Version 4.0.0 upgrade note:** legacy cache entries and `aiReasonCache` are discarded because
+they do not identify the inference configuration. Settings and rules are retained.
+Imported legacy caches are also discarded. To restore cached Details after reinstalling,
+export and import **Settings, Rules, and Cache** together: lookups require the
+original criterion and matching inference settings. Import refreshes the running
+classifier immediately; Maintenance counts its validated, loaded entries. A cache-only
+import will not recreate rules or settings. Clearing a message's cache removes its
+entries across rules and configurations.
+
+### SystemOne with llama-server
+
+Use a llama.cpp build supporting `/v1/systemone` and a compatible decision GGUF;
+older builds and ordinary chat models cannot serve this API. A 404 with
+`File Not Found` from `/v1/systemone` indicates the route is unavailable: check
+the running server build and any reverse-proxy routing. Loading a decision GGUF
+alone does not add this route to an older server. For example:
+
+```sh
+llama-server -hf ggml-org/Laya-GGUF
+```
+
+1. Select **SystemOne** in Settings and set the endpoint to `http://127.0.0.1:8080`
+   (or your server's address). Refresh models and select one, or choose **None**
+   for a single loaded model. Router deployments require the appropriate model ID.
+2. Set the default match probability threshold (initially **50%**). Each rule has
+   an optional percentage override; leave it blank to inherit the default.
+3. Apply rules normally. One `noul` question is sent per evaluated rule. A rule
+   matches when the unrounded probability is **greater than or equal to** its
+   effective threshold. For example, 80% matches an 80% threshold.
+4. Open Details to see a probability bar with the percentage inside. Hover over
+   the bar to see the current threshold and model. This is the
+   result under current settings, not an action history. Changing thresholds does
+   not automatically rerun actions. Decision models provide no textual explanation;
+   no second model is called to invent one. Use Chat Completions for explanations.
+
+Probabilities are model estimates, not guaranteed accuracy. Evaluate thresholds
+against representative labeled emails, including long messages and attachments.
+SystemOne uses the existing text extraction and attachment summaries; it does not
+send attachment binaries or images. Chat prompts and generation settings remain
+saved but are inactive for SystemOne. Optional Bearer authentication works with
+both APIs; organization/project headers apply only to Chat Completions.
+
+**Input character limit** applies when aggressive reduction is enabled, independently
+of maximum output tokens. Existing installations inherit their previous effective
+character limit; the default is 3686. Character counts do not guarantee that input
+fits a model's token context or llama-server batch limits. Leave room for question
+instructions and configure the server for the chosen model.
+
+A request or response-parsing failure stops the remaining rules for that email,
+records an error, and allows the queue to continue with the next email. Failed
+results are never cached. Actions already completed are not rolled back.
+
+Upstream: [llama-server SystemOne documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#typesafe-compatible-api-endpoints).
+
+### Verification
+
+Run the dependency-free tests with Node.js 22 or newer:
+
+```sh
+node --test tests/*.test.mjs
+```
+
+Tests cover adapters, thresholds, URLs, settings validation, cache migration and
+reuse, request failures, per-email snapshots, and queue behavior with mocked
+Thunderbird services. Manual acceptance testing in Thunderbird should verify both
+API types, model discovery, rule overrides and ordering, import/export, cache
+clearing, Details, and stop-after-match against a running server.
 
 ## Architecture Overview
 
 Sortana is implemented entirely with documented MailExtension/WebExtension APIs. No custom experiment code or Thunderbird-internal fallback paths are required:
 
 - `background.js` loads saved settings, manages the classification queue and listens for new messages.
-- `modules/AiClassifier.js` implements the classification logic and cache handling.
+- `modules/AiClassifier.js` shares transport, threshold policy, and cache handling;
+  `modules/backends/` contains the Chat Completions and SystemOne adapters.
 - `options/` contains the HTML and JavaScript for configuring the endpoint and rules.
-- `details.html` / `details.js` present cached reasoning for a message.
+- `details.html` / `details.js` present cached classification evidence for a message.
 - `_locales/` holds localized strings used throughout the UI.
 
 ### Key Files
@@ -65,7 +135,7 @@ Sortana is implemented entirely with documented MailExtension/WebExtension APIs.
 | `background.js`                         | Startup tasks and classification queue management. |
 | `modules/AiClassifier.js`               | Core classification logic and cache handling. |
 | `options/options.html` and `options.js` | Endpoint and rule configuration UI. |
-| `details.html` and `details.js`         | View stored reasoning for a message. |
+| `details.html` and `details.js`         | View stored classification evidence for a message. |
 | `logger.js`                             | Colorized logging with optional debug mode. |
 
 ## Building
@@ -84,7 +154,7 @@ Sortana is implemented entirely with documented MailExtension/WebExtension APIs.
 ## Usage
 
 1. Open the add-on's options and set the base URL of your classification service
-   (Sortana will append `/v1/chat/completions`). Use the Model dropdown to load
+   (Sortana appends the path for the selected API type). Use the Model dropdown to load
    `/v1/models` and select a model or choose **None** to omit the `model` field.
    Advanced settings include optional API key, organization, and project headers
    for OpenAI-hosted endpoints.

@@ -4,6 +4,33 @@
   <meta charset="UTF-8">
   <title>AI Details</title>
   <link rel="stylesheet" href="options/bulma.css">
+  <style>
+    .probability-bar {
+      position: relative;
+      height: 1.75rem;
+      overflow: hidden;
+      border: 1px solid var(--bulma-border);
+      border-radius: var(--bulma-radius-small);
+      background: var(--bulma-background);
+    }
+    .probability-fill {
+      height: 100%;
+      background: var(--bulma-success);
+      opacity: 0.35;
+    }
+    .probability-bar.is-danger .probability-fill {
+      background: var(--bulma-danger);
+    }
+    .probability-value {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--bulma-text-strong);
+      font-weight: 600;
+    }
+  </style>
 </head>
 <body>
   <section class="section">

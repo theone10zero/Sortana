@@ -1,438 +1,151 @@
 "use strict";
-import { aiLog, setDebug } from "../logger.js";
-import { DEFAULT_AI_PARAMS } from "./defaultParams.js";
-
+import { aiLog, setDebug } from '../logger.js';
+import { CONFIG_DEFAULTS, validateSettings, validateThreshold } from './classificationConfig.js';
+import * as chat from './backends/chatCompletions.js';
+import * as systemone from './backends/systemOne.js';
 const storage = (globalThis.messenger ?? globalThis.browser).storage;
+const adapters = { 'chat-completions': chat, systemone };
+let config = structuredClone(CONFIG_DEFAULTS);
+let cache = new Map();
+let loaded = false;
+let loading;
+let generation = 0;
 
-const CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
-const MODELS_PATH = "/v1/models";
-
-const SYSTEM_PREFIX = `You are an email-classification assistant.
-Read the email below and the classification criterion provided by the user.
-`;
-
-const DEFAULT_CUSTOM_SYSTEM_PROMPT = "Determine whether the email satisfies the user's criterion.";
-
-const SYSTEM_SUFFIX = `
-Return ONLY a JSON object on a single line of the form:
-{"match": true, "reason": "<short explanation>"} - if the email satisfies the criterion
-{"match": false, "reason": "<short explanation>"} - otherwise
-
-Do not add any other keys, text, or formatting.`;
-
-let gEndpointBase = "http://127.0.0.1:5000";
-let gEndpoint = buildEndpointUrl(gEndpointBase);
-let gCustomSystemPrompt = DEFAULT_CUSTOM_SYSTEM_PROMPT;
-
-let gAiParams = Object.assign({}, DEFAULT_AI_PARAMS);
-let gModel = "";
-let gApiKey = "";
-let gOpenaiOrganization = "";
-let gOpenaiProject = "";
-
-let gCache = new Map();
-let gCacheLoaded = false;
-
-function normalizeEndpointBase(endpoint) {
-  if (typeof endpoint !== "string") {
-    return "";
-  }
-  let base = endpoint.trim();
-  if (!base) {
-    return "";
-  }
-  base = base.replace(/\/v1\/(chat\/completions|completions|models)\/?$/i, "");
-  return base;
+export function normalizeEndpointBase(endpoint) {
+  if (typeof endpoint !== 'string' || !endpoint.trim()) return '';
+  return endpoint.trim().replace(/\/+$/, '').replace(/\/v1(?:\/(?:chat\/completions|completions|models|systemone))?$/i, '');
 }
-
-function buildEndpointUrl(endpointBase) {
-  const base = normalizeEndpointBase(endpointBase);
-  if (!base) {
-    return "";
-  }
-  const withScheme = /^https?:\/\//i.test(base) ? base : `https://${base}`;
-  const needsSlash = withScheme.endsWith("/");
-  const path = CHAT_COMPLETIONS_PATH.replace(/^\//, "");
-  return `${withScheme}${needsSlash ? "" : "/"}${path}`;
+function urlFor(endpoint, path) {
+  const base = normalizeEndpointBase(endpoint);
+  return base ? `${/^https?:\/\//i.test(base) ? base : `https://${base}`}${path}` : '';
 }
-
-function buildModelsUrl(endpointBase) {
-  const base = normalizeEndpointBase(endpointBase);
-  if (!base) {
-    return "";
-  }
-  const withScheme = /^https?:\/\//i.test(base) ? base : `https://${base}`;
-  const needsSlash = withScheme.endsWith("/");
-  const path = MODELS_PATH.replace(/^\//, "");
-  return `${withScheme}${needsSlash ? "" : "/"}${path}`;
+export function buildEndpointUrl(endpoint, apiType = 'chat-completions') {
+  if (!adapters[apiType]) throw new Error('Unknown API type.');
+  return urlFor(endpoint, adapters[apiType].path);
 }
-
-async function sha256Hex(str) {
-  try {
-    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
-    return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, "0")).join("");
-  } catch (e) {
-    aiLog("sha256Hex failed", { level: "error" }, e);
-    return "";
+export function buildModelsUrl(endpoint) { return urlFor(endpoint, '/v1/models'); }
+export function getConfig() { return structuredClone(config); }
+export function setConfig(update = {}) {
+  validateSettings(update);
+  for (const key of Object.keys(CONFIG_DEFAULTS)) {
+    if (update[key] !== undefined) config[key] = structuredClone(update[key]);
   }
+  config.aiParams = { ...CONFIG_DEFAULTS.aiParams, ...config.aiParams };
+  for (const key of ['model', 'apiKey', 'openaiOrganization', 'openaiProject']) config[key] = String(config[key]).trim();
+  setDebug(config.debugLogging);
 }
-
-async function resolveHeaderId(id) {
-  if (typeof id === "number" && typeof messenger?.messages?.get === "function") {
+async function hash(value) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+}
+async function messageHash(id) {
+  const api = globalThis.messenger ?? globalThis.browser;
+  if (typeof id === 'number' && api.messages?.get) {
+    const header = await api.messages.get(id);
+    id = header.headerMessageId || id;
+  }
+  return hash(String(id));
+}
+function stable(value) {
+  if (Array.isArray(value)) return value.map(stable);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(k => [k, stable(value[k])]));
+  return value;
+}
+export async function buildCacheKey(id, criterion, snapshot = getConfig()) {
+  const fingerprint = {
+    backend: snapshot.apiType, endpoint: buildEndpointUrl(snapshot.endpoint, snapshot.apiType),
+    request: adapters[snapshot.apiType].buildRequest('', criterion, snapshot),
+    organization: snapshot.apiType === 'chat-completions' ? snapshot.openaiOrganization : '',
+    project: snapshot.apiType === 'chat-completions' ? snapshot.openaiProject : '',
+    preprocessing: Object.fromEntries(['htmlToMarkdown', 'stripUrlParams', 'altTextImages', 'collapseWhitespace', 'tokenReduction', 'inputCharacterLimit'].map(k => [k, snapshot[k]]))
+  };
+  return `v2:${await messageHash(id)}:${await hash(JSON.stringify(stable(fingerprint)))}`;
+}
+export function validCacheEntry(key, entry) {
+  return /^v2:[a-f0-9]{64}:[a-f0-9]{64}$/.test(key) && entry?.version === 2 &&
+    entry.messageHash === key.split(':')[1] && typeof entry.model === 'string' &&
+    (entry.backend === 'systemone'
+      ? typeof entry.probability === 'number' && Number.isFinite(entry.probability) && entry.probability >= 0 && entry.probability <= 1 && entry.reason === null
+      : entry.backend === 'chat-completions' && typeof entry.matched === 'boolean' && entry.probability === null && (entry.reason === null || typeof entry.reason === 'string'));
+}
+export function replaceCache(data = {}) {
+  cache = new Map(Object.entries(data || {}).filter(([key, entry]) => validCacheEntry(key, entry)));
+  loaded = true;
+  generation++;
+}
+async function saveCache() { await storage.local.set({ aiCache: Object.fromEntries(cache) }); }
+export async function init() {
+  if (loaded) return;
+  if (!loading) loading = (async () => {
+    const { aiCache = {}, aiReasonCache } = await storage.local.get(['aiCache', 'aiReasonCache']);
+    replaceCache(aiCache);
+    if (Object.keys(aiCache || {}).length !== cache.size) await saveCache();
+    if (aiReasonCache !== undefined) await storage.local.remove('aiReasonCache');
+  })().finally(() => { loading = null; });
+  await loading;
+}
+function withPolicy(entry, threshold) {
+  const isDecision = entry.backend === 'systemone';
+  if (isDecision) validateThreshold(threshold);
+  return { matched: isDecision ? entry.probability >= threshold : entry.matched,
+    reason: entry.reason, probability: entry.probability, threshold: isDecision ? threshold : null,
+    backend: entry.backend, model: entry.model };
+}
+export function getCachedDetails(key, threshold = config.decisionThreshold) {
+  const entry = cache.get(key);
+  return entry ? withPolicy(entry, threshold) : null;
+}
+export function getCachedResult(key, threshold) { return getCachedDetails(key, threshold)?.matched ?? null; }
+export function getReason(key) { return cache.get(key)?.reason ?? null; }
+export async function classify(text, criterion, { cacheKey = null, snapshot = getConfig(), threshold = snapshot.decisionThreshold } = {}) {
+  await init();
+  if (snapshot.apiType === 'systemone') validateThreshold(threshold);
+  const cached = getCachedDetails(cacheKey, threshold);
+  if (cached) return cached;
+  const epoch = generation;
+  const adapter = adapters[snapshot.apiType];
+  const payload = adapter.buildRequest(text, criterion, snapshot);
+  try { await storage.local.set({ lastPayload: payload }); }
+  catch (error) { aiLog('Failed to save last payload', { level: 'warn' }, error); }
+  const headers = { 'Content-Type': 'application/json' };
+  if (snapshot.apiKey) headers.Authorization = `Bearer ${snapshot.apiKey}`;
+  if (snapshot.apiType === 'chat-completions') {
+    if (snapshot.openaiOrganization) headers['OpenAI-Organization'] = snapshot.openaiOrganization;
+    if (snapshot.openaiProject) headers['OpenAI-Project'] = snapshot.openaiProject;
+  }
+  const endpoint = buildEndpointUrl(snapshot.endpoint, snapshot.apiType);
+  const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(payload) });
+  if (!response.ok) {
+    let detail = '';
     try {
-      const hdr = await messenger.messages.get(id);
-      if (hdr?.headerMessageId) {
-        return hdr.headerMessageId;
-      }
-    } catch (e) {
-      aiLog(`Failed to resolve headerMessageId for ${id}`, { level: 'warn' }, e);
-    }
+      const body = await response.json();
+      const message = body?.error?.message;
+      if (typeof message === 'string') detail = ` Server response: ${message.slice(0, 300)}.`;
+    } catch { /* Non-JSON error responses still report the URL and status. */ }
+    const hint = response.status === 404 && snapshot.apiType === 'systemone'
+      ? ' Verify that the running server build supports /v1/systemone and the selected decision model.' : '';
+    throw new Error(`Classification request failed: HTTP ${response.status} at ${endpoint}.${detail}${hint}`);
   }
-  return String(id);
-}
-
-async function buildCacheKey(id, criterion) {
-  const resolvedId = await resolveHeaderId(id);
-  return sha256Hex(`${resolvedId}|${criterion}`);
-}
-
-async function loadCache() {
-  if (gCacheLoaded) {
-    return;
-  }
-  aiLog(`[AiClassifier] Loading cache`, {debug: true});
-  try {
-    const { aiCache, aiReasonCache } = await storage.local.get(["aiCache", "aiReasonCache"]);
-    if (aiCache) {
-      for (let [k, v] of Object.entries(aiCache)) {
-        if (v && typeof v === "object") {
-          gCache.set(k, { matched: v.matched ?? null, reason: v.reason || "" });
-        } else {
-          gCache.set(k, { matched: v, reason: "" });
-        }
-      }
-      aiLog(`[AiClassifier] Loaded ${gCache.size} cache entries`, {debug: true});
-    } else {
-      aiLog(`[AiClassifier] Cache is empty`, {debug: true});
-    }
-    if (aiReasonCache) {
-      aiLog(`[AiClassifier] Migrating ${Object.keys(aiReasonCache).length} reason entries`, {debug: true});
-      for (let [k, reason] of Object.entries(aiReasonCache)) {
-        let entry = gCache.get(k) || { matched: null, reason: "" };
-        entry.reason = reason;
-        gCache.set(k, entry);
-      }
-      await storage.local.remove("aiReasonCache");
-      await storage.local.set({ aiCache: Object.fromEntries(gCache) });
-    }
-  } catch (e) {
-    aiLog(`Failed to load cache`, {level: 'error'}, e);
-  }
-  gCacheLoaded = true;
-}
-
-
-async function saveCache(updatedKey, updatedValue) {
-  if (typeof updatedKey !== "undefined") {
-    aiLog(`[AiClassifier] ⮡ Persisting entry '${updatedKey}' → ${updatedValue}`, {debug: true});
-  }
-  try {
-    await storage.local.set({ aiCache: Object.fromEntries(gCache) });
-  } catch (e) {
-    aiLog(`Failed to save cache`, {level: 'error'}, e);
-  }
-}
-
-
-async function setConfig(config = {}) {
-  if (typeof config.endpoint === "string") {
-    const base = normalizeEndpointBase(config.endpoint);
-    if (base) {
-      gEndpointBase = base;
-    }
-    gEndpoint = buildEndpointUrl(gEndpointBase);
-  }
-  if (typeof config.customSystemPrompt === "string") {
-    gCustomSystemPrompt = config.customSystemPrompt;
-  }
-  if (config.aiParams && typeof config.aiParams === "object") {
-    for (let [k, v] of Object.entries(config.aiParams)) {
-      if (k in gAiParams && typeof v !== "undefined") {
-        gAiParams[k] = v;
-      }
-    }
-  }
-  if (typeof config.model === "string") {
-    gModel = config.model.trim();
-  }
-  if (typeof config.apiKey === "string") {
-    gApiKey = config.apiKey.trim();
-  }
-  if (typeof config.openaiOrganization === "string") {
-    gOpenaiOrganization = config.openaiOrganization.trim();
-  }
-  if (typeof config.openaiProject === "string") {
-    gOpenaiProject = config.openaiProject.trim();
-  }
-  if (typeof config.debugLogging === "boolean") {
-    setDebug(config.debugLogging);
-  }
-  if (!gEndpoint) {
-    gEndpoint = buildEndpointUrl(gEndpointBase);
-  }
-  aiLog(`[AiClassifier] Endpoint base set to ${gEndpointBase}`, {debug: true});
-  aiLog(`[AiClassifier] Endpoint set to ${gEndpoint}`, {debug: true});
-}
-
-function buildAuthHeaders() {
-  const headers = {};
-  if (gApiKey) {
-    headers.Authorization = `Bearer ${gApiKey}`;
-  }
-  if (gOpenaiOrganization) {
-    headers["OpenAI-Organization"] = gOpenaiOrganization;
-  }
-  if (gOpenaiProject) {
-    headers["OpenAI-Project"] = gOpenaiProject;
-  }
-  return headers;
-}
-
-function buildSystemPrompt() {
-  return SYSTEM_PREFIX + (gCustomSystemPrompt || DEFAULT_CUSTOM_SYSTEM_PROMPT) + SYSTEM_SUFFIX;
-}
-
-function buildPrompt(body, criterion) {
-  aiLog(`[AiClassifier] Building prompt with criterion: "${criterion}"`, {debug: true});
-  return `**Email Contents**\n\`\`\`\n${body}\n\`\`\`\nClassification Criterion: ${criterion}`;
-}
-
-function getCachedResult(cacheKey) {
-  if (!gCacheLoaded) {
-    return null;
-  }
-  if (cacheKey && gCache.has(cacheKey)) {
-    aiLog(`[AiClassifier] Cache hit for key: ${cacheKey}`, {debug: true});
-    const entry = gCache.get(cacheKey);
-    return entry?.matched ?? null;
-  }
-  return null;
-}
-
-function getReason(cacheKey) {
-  if (!gCacheLoaded) {
-    return null;
-  }
-  const entry = gCache.get(cacheKey);
-  return cacheKey && entry ? entry.reason || null : null;
-}
-
-function buildPayload(text, criterion) {
-  let payloadObj = Object.assign({
-    messages: [
-      { role: "system", content: buildSystemPrompt() },
-      { role: "user", content: buildPrompt(text, criterion) }
-    ]
-  }, gAiParams);
-  if (gModel) {
-    payloadObj.model = gModel;
-  }
-  return JSON.stringify(payloadObj);
-}
-
-function reportParseError(message, detail) {
-  try {
-    const runtime = (globalThis.browser ?? globalThis.messenger)?.runtime;
-    if (!runtime?.sendMessage) {
-      return;
-    }
-    runtime.sendMessage({
-      type: "sortana:recordError",
-      context: "AI response parsing",
-      message,
-      detail
-    }).catch(() => {});
-  } catch (e) {
-    aiLog("Failed to report parse error", { level: "warn" }, e);
-  }
-}
-
-function extractLastJsonObject(text) {
-  let last = null;
-  let start = -1;
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (inString) {
-      if (escape) {
-        escape = false;
-        continue;
-      }
-      if (ch === "\\") {
-        escape = true;
-        continue;
-      }
-      if (ch === "\"") {
-        inString = false;
-      }
-      continue;
-    }
-    if (ch === "\"") {
-      inString = true;
-      continue;
-    }
-    if (ch === "{") {
-      if (depth === 0) {
-        start = i;
-      }
-      depth += 1;
-      continue;
-    }
-    if (ch === "}" && depth > 0) {
-      depth -= 1;
-      if (depth === 0 && start !== -1) {
-        last = text.slice(start, i + 1);
-        start = -1;
-      }
-    }
-  }
-
-  return last;
-}
-
-function parseMatch(result) {
-  const rawText = result.choices?.[0]?.message?.content;
-  if (typeof rawText !== "string") {
-    reportParseError("Chat response missing text content.", JSON.stringify(result).slice(0, 800));
-    return { matched: false, reason: "" };
-  }
-  const candidate = extractLastJsonObject(rawText);
-  if (!candidate) {
-    reportParseError("No JSON object found in AI response.", rawText.slice(0, 800));
-    return { matched: false, reason: "" };
-  }
-
-  let obj;
-  try {
-    obj = JSON.parse(candidate);
-  } catch (e) {
-    reportParseError("Failed to parse JSON from AI response.", candidate.slice(0, 800));
-    return { matched: false, reason: "" };
-  }
-
-  const matchValue = Object.prototype.hasOwnProperty.call(obj, "match") ? obj.match : obj.matched;
-  const matched = matchValue === true;
-  if (matchValue !== true && matchValue !== false) {
-    reportParseError("AI response missing valid match boolean.", candidate.slice(0, 800));
-  }
-
-  const reasonValue = obj.reason ?? obj.reasoning ?? obj.explaination;
-  const reason = typeof reasonValue === "string" ? reasonValue : "";
-
-  return { matched, reason };
-}
-
-function cacheEntry(cacheKey, matched, reason) {
-  if (!cacheKey) {
-    return;
-  }
-  aiLog(`[AiClassifier] Caching entry '${cacheKey}'`, {debug: true});
-  const entry = gCache.get(cacheKey) || { matched: null, reason: "" };
-  if (typeof matched === "boolean") {
-    entry.matched = matched;
-  }
-  if (typeof reason === "string") {
-    entry.reason = reason;
-  }
-  gCache.set(cacheKey, entry);
-  saveCache(cacheKey, entry);
-}
-
-async function removeCacheEntries(keys = []) {
-  if (!Array.isArray(keys)) {
-    keys = [keys];
-  }
-  if (!gCacheLoaded) {
-    await loadCache();
-  }
-  let removed = false;
-  for (let key of keys) {
-    if (gCache.delete(key)) {
-      removed = true;
-      aiLog(`[AiClassifier] Removed cache entry '${key}'`, {debug: true});
-    }
-  }
-  if (removed) {
+  const raw = await response.json();
+  const entry = { ...adapter.parseResponse(raw), backend: snapshot.apiType,
+    model: typeof raw.model === 'string' ? raw.model : snapshot.model, version: 2,
+    messageHash: cacheKey?.split(':')[1] };
+  if (cacheKey && epoch === generation) {
+    cache.set(cacheKey, entry);
     await saveCache();
   }
+  return withPolicy(entry, threshold);
 }
-
-async function clearCache() {
-  if (!gCacheLoaded) {
-    await loadCache();
-  }
-  if (gCache.size > 0) {
-    gCache.clear();
-    await saveCache();
-    aiLog(`[AiClassifier] Cleared cache`, {debug: true});
-  }
+export async function classifyText(text, criterion, cacheKey = null) { return (await classify(text, criterion, { cacheKey })).matched; }
+export async function removeCacheEntries(keys = []) {
+  await init(); generation++;
+  for (const key of Array.isArray(keys) ? keys : [keys]) cache.delete(key);
+  await saveCache();
 }
-
-async function getCacheSize() {
-  if (!gCacheLoaded) {
-    await loadCache();
-  }
-  return gCache.size;
+export async function clearCacheForMessage(id) {
+  await init();
+  const identifier = await messageHash(id);
+  await removeCacheEntries([...cache].filter(([, entry]) => entry.messageHash === identifier).map(([key]) => key));
 }
-
-
-async function classifyText(text, criterion, cacheKey = null) {
-  if (!gCacheLoaded) {
-    await loadCache();
-  }
-  const cached = getCachedResult(cacheKey);
-  if (cached !== null) {
-    return cached;
-  }
-
-  const payload = buildPayload(text, criterion);
-  try {
-    await storage.local.set({ lastPayload: JSON.parse(payload) });
-  } catch (e) {
-    aiLog('failed to save last payload', { level: 'warn' }, e);
-  }
-
-  aiLog(`[AiClassifier] Sending classification request to ${gEndpoint}`, {debug: true});
-  aiLog(`[AiClassifier] Classification request payload:`, { debug: true }, payload);
-
-  try {
-    const response = await fetch(gEndpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
-      body: payload,
-    });
-
-    if (!response.ok) {
-      aiLog(`HTTP status ${response.status}`, {level: 'warn'});
-      return false;
-    }
-
-    const result = await response.json();
-    aiLog(`[AiClassifier] Received response:`, {debug: true}, result);
-    const parsed = parseMatch(result);
-    cacheEntry(cacheKey, parsed.matched, parsed.reason);
-    return parsed.matched;
-  } catch (e) {
-    aiLog(`HTTP request failed`, {level: 'error'}, e);
-    return false;
-  }
-}
-
-async function init() {
-  await loadCache();
-}
-
-export { buildEndpointUrl, buildModelsUrl, normalizeEndpointBase, classifyText, setConfig, removeCacheEntries, clearCache, getReason, getCachedResult, buildCacheKey, getCacheSize, init };
+export async function clearCache() { await init(); generation++; cache.clear(); await saveCache(); }
+export async function getCacheSize() { await init(); return cache.size; }

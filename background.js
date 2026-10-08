@@ -28,7 +28,6 @@ let stripUrlParams = false;
 let altTextImages = false;
 let collapseWhitespace = false;
 let tokenReduction = false;
-let maxTokens = 4096;
 let TurndownService = null;
 let userTheme = 'auto';
 let currentTheme = 'light';
@@ -53,6 +52,7 @@ function normalizeRules(rules) {
         if (r.moveTo) actions.push({ type: 'move', folder: r.moveTo });
         if (r.copyTarget || r.copyTo) actions.push({ type: 'copy', copyTarget: r.copyTarget || r.copyTo });
         const rule = { criterion: r.criterion, actions };
+        if (r.decisionThreshold !== undefined) rule.decisionThreshold = r.decisionThreshold;
         if (r.stopProcessing) rule.stopProcessing = true;
         if (r.unreadOnly) rule.unreadOnly = true;
         if (typeof r.minAgeDays === 'number') rule.minAgeDays = r.minAgeDays;
@@ -318,10 +318,12 @@ async function processMessage(id) {
     updateActionIcon();
     try {
         const full = await messenger.messages.getFull(id);
+        const snapshot = AiClassifier.getConfig();
+        const rules = structuredClone(aiRules);
         const originalText = buildEmailText(full, false);
         let text = buildEmailText(full);
-        if (tokenReduction && maxTokens > 0) {
-            const limit = Math.floor(maxTokens * 0.9);
+        if (tokenReduction) {
+            const limit = snapshot.inputCharacterLimit;
             if (text.length > limit) {
                 text = text.slice(0, limit);
             }
@@ -345,7 +347,7 @@ async function processMessage(id) {
             identityId = null;
         }
 
-        for (const rule of aiRules) {
+        for (const rule of rules) {
             if (rule.enabled === false) {
                 continue;
             }
@@ -372,8 +374,8 @@ async function processMessage(id) {
                     }
                 }
             }
-            const cacheKey = await AiClassifier.buildCacheKey(id, rule.criterion);
-            const matched = await AiClassifier.classifyText(text, rule.criterion, cacheKey);
+            const cacheKey = await AiClassifier.buildCacheKey(id, rule.criterion, snapshot);
+            const { matched } = await AiClassifier.classify(text, rule.criterion, { cacheKey, snapshot, threshold: rule.decisionThreshold ?? snapshot.decisionThreshold });
             if (matched) {
                 for (const act of (rule.actions || [])) {
                     if (act.type === 'tag' && act.tagKey) {
@@ -456,18 +458,8 @@ async function clearCacheForMessages(idsInput) {
         aiRules = normalizeRules(stored);
     }
 
-    const keys = [];
-    for (const msg of ids) {
-        const id = msg?.id ?? msg;
-        for (const rule of aiRules) {
-            const key = await AiClassifier.buildCacheKey(id, rule.criterion);
-            keys.push(key);
-        }
-    }
-    if (keys.length) {
-        await AiClassifier.removeCacheEntries(keys);
-        showTransientIcon(ICONS.circle);
-    }
+    for (const msg of ids) await AiClassifier.clearCacheForMessage(msg?.id ?? msg);
+    showTransientIcon(ICONS.circle);
 }
 
 (async () => {
@@ -484,8 +476,13 @@ async function clearCacheForMessages(idsInput) {
     }
 
     try {
-        const store = await storage.local.get(["endpoint", "model", "apiKey", "openaiOrganization", "openaiProject", "customSystemPrompt", "aiParams", "debugLogging", "htmlToMarkdown", "stripUrlParams", "altTextImages", "collapseWhitespace", "tokenReduction", "aiRules", "theme", "showDebugTab"]);
+        const store = await storage.local.get(["apiType", "decisionThreshold", "inputCharacterLimit", "endpoint", "model", "apiKey", "openaiOrganization", "openaiProject", "customSystemPrompt", "aiParams", "debugLogging", "htmlToMarkdown", "stripUrlParams", "altTextImages", "collapseWhitespace", "tokenReduction", "aiRules", "theme", "showDebugTab"]);
         logger.setDebug(store.debugLogging);
+        const { migratedInputLimit } = await import(browser.runtime.getURL('modules/classificationConfig.js'));
+        if (store.inputCharacterLimit === undefined) {
+            store.inputCharacterLimit = migratedInputLimit(store);
+            await storage.local.set({ inputCharacterLimit: store.inputCharacterLimit });
+        }
         await AiClassifier.setConfig(store);
         userTheme = store.theme || 'auto';
         currentTheme = userTheme === 'auto' ? await detectSystemTheme() : userTheme;
@@ -495,9 +492,6 @@ async function clearCacheForMessages(idsInput) {
         altTextImages = store.altTextImages === true;
         collapseWhitespace = store.collapseWhitespace === true;
         tokenReduction = store.tokenReduction === true;
-        if (store.aiParams && typeof store.aiParams.max_tokens !== 'undefined') {
-            maxTokens = parseInt(store.aiParams.max_tokens) || maxTokens;
-        }
         showDebugTab = store.showDebugTab === true;
         const savedStats = await storage.local.get('classifyStats');
         if (savedStats.classifyStats && typeof savedStats.classifyStats === 'object') {
@@ -514,27 +508,9 @@ async function clearCacheForMessages(idsInput) {
                 aiRules = normalizeRules(newRules);
                 logger.aiLog("aiRules updated from storage change", { debug: true }, aiRules);
             }
-            if (changes.endpoint || changes.model || changes.apiKey || changes.openaiOrganization || changes.openaiProject || changes.customSystemPrompt || changes.aiParams || changes.debugLogging) {
-                const config = {};
-                if (changes.endpoint) config.endpoint = changes.endpoint.newValue;
-                if (changes.model) config.model = changes.model.newValue;
-                if (changes.apiKey) config.apiKey = changes.apiKey.newValue;
-                if (changes.openaiOrganization) config.openaiOrganization = changes.openaiOrganization.newValue;
-                if (changes.openaiProject) config.openaiProject = changes.openaiProject.newValue;
-                if (changes.customSystemPrompt) config.customSystemPrompt = changes.customSystemPrompt.newValue;
-                if (changes.aiParams) {
-                    config.aiParams = changes.aiParams.newValue;
-                    if (changes.aiParams.newValue && typeof changes.aiParams.newValue.max_tokens !== 'undefined') {
-                        maxTokens = parseInt(changes.aiParams.newValue.max_tokens) || maxTokens;
-                    }
-                }
-                if (changes.debugLogging) {
-                    config.debugLogging = changes.debugLogging.newValue === true;
-                    logger.setDebug(config.debugLogging);
-                }
-                await AiClassifier.setConfig(config);
-                logger.aiLog("AiClassifier config updated from storage change", { debug: true }, config);
-            }
+            const configChanges = Object.fromEntries(Object.entries(changes).map(([key, change]) => [key, change.newValue]));
+            AiClassifier.setConfig(configChanges);
+            if (changes.aiCache) AiClassifier.replaceCache(changes.aiCache.newValue);
             if (changes.htmlToMarkdown) {
                 htmlToMarkdown = changes.htmlToMarkdown.newValue === true;
                 logger.aiLog("htmlToMarkdown updated from storage change", { debug: true }, htmlToMarkdown);
@@ -666,10 +642,10 @@ async function clearCacheForMessages(idsInput) {
             logger.aiLog("sortana:test – criterion", { debug: true }, criterion);
 
             try {
-                logger.aiLog("Calling AiClassifier.classifyText()", { debug: true });
-                const result = await AiClassifier.classifyText(text, criterion);
+                logger.aiLog("Calling AiClassifier.classify()", { debug: true });
+                const result = await AiClassifier.classify(text, criterion, { threshold: msg.decisionThreshold ?? AiClassifier.getConfig().decisionThreshold });
                 logger.aiLog("classify() returned", { debug: true }, result);
-                return { match: result };
+                return { ...result, match: result.matched };
             }
             catch (err) {
                 logger.aiLog("Error in classify()", { level: 'error' }, err);
@@ -716,13 +692,11 @@ async function clearCacheForMessages(idsInput) {
                     aiRules = normalizeRules(stored);
                 }
                 const results = [];
-                for (const rule of aiRules) {
-                    const key = await AiClassifier.buildCacheKey(id, rule.criterion);
-                    const matched = AiClassifier.getCachedResult(key);
-                    const reason = AiClassifier.getReason(key);
-                    if (matched !== null || reason) {
-                        results.push({ criterion: rule.criterion, matched, reason });
-                    }
+                const snapshot = AiClassifier.getConfig();
+                for (const rule of structuredClone(aiRules)) {
+                    const key = await AiClassifier.buildCacheKey(id, rule.criterion, snapshot);
+                    const detail = AiClassifier.getCachedDetails(key, rule.decisionThreshold ?? snapshot.decisionThreshold);
+                    if (detail) results.push({ criterion: rule.criterion, ...detail });
                 }
                 return { subject, results };
             } catch (e) {
@@ -757,6 +731,8 @@ async function clearCacheForMessages(idsInput) {
             timingStats.last = typeof last === 'number' ? last : -1;
             await storage.local.set({ classifyStats: timingStats });
             return { ok: true };
+        } else if (msg?.type === "sortana:getCacheSize") {
+            return { count: await AiClassifier.getCacheSize() };
         } else if (msg?.type === "sortana:getQueueCount") {
             return { count: queuedCount + (processing ? 1 : 0) };
         } else if (msg?.type === "sortana:getErrorLog") {

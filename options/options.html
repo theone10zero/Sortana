@@ -64,11 +64,25 @@
                 </div>
             </div>
 
+            <p class="help is-danger mb-3" id="settings-error" role="alert"></p>
+
             <div id="settings-tab" class="tab-content">
                 <h2 class="title is-4">
                     <span class="icon is-small"><img data-icon="settings" data-size="16" src="../resources/img/settings-light-16.png" alt=""></span>
                     <span>Settings</span>
                 </h2>
+                <div class="field">
+                    <label class="label" for="api-type">API type</label>
+                    <div class="select"><select id="api-type">
+                        <option value="chat-completions">Chat Completions</option>
+                        <option value="systemone">SystemOne</option>
+                    </select></div>
+                </div>
+                <div class="field systemone-only">
+                    <label class="label" for="decision-threshold">Default match probability threshold (%)</label>
+                    <input class="input" id="decision-threshold" type="number" min="0" max="100" step="any">
+                    <p class="help">Match when probability is at least this value. Rules may override it. Evaluate thresholds on your own email examples.</p>
+                </div>
                 <div class="field">
                     <label class="label" for="endpoint">Endpoint</label>
                     <div class="control">
@@ -186,7 +200,12 @@
                         </label>
                     </div>
                     <div class="field">
-                        <label class="label" for="max_tokens">Max tokens</label>
+                        <label class="label" for="input-character-limit">Input character limit</label>
+                        <input class="input" id="input-character-limit" type="number" min="1" step="1">
+                        <p class="help">Applied with aggressive reduction. Characters are not tokens; leave room for instructions within your model's context limit.</p>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="max_tokens">Maximum output tokens</label>
                         <div class="control">
                             <input class="input" type="number" id="max_tokens">
                         </div>
