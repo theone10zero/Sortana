@@ -2,6 +2,7 @@ import { DEFAULT_AI_PARAMS } from './defaultParams.js';
 export const CONFIG_DEFAULTS = {
   apiType: 'chat-completions', endpoint: 'http://127.0.0.1:5000', model: '',
   apiKey: '', openaiOrganization: '', openaiProject: '', customSystemPrompt: '',
+  systemOneProcessAll: true, systemOneBatchSize: 8,
   decisionThreshold: 0.5, inputCharacterLimit: 3686, aiParams: DEFAULT_AI_PARAMS,
   htmlToMarkdown: false, stripUrlParams: false, altTextImages: false,
   collapseWhitespace: false, tokenReduction: false, debugLogging: false
@@ -13,6 +14,12 @@ export function validateThreshold(value) {
   return value;
 }
 export function validateSettings(data) {
+  if (data.systemOneProcessAll !== undefined && typeof data.systemOneProcessAll !== 'boolean') {
+    throw new Error('Process all must be a boolean.');
+  }
+  if (data.systemOneBatchSize !== undefined && (!Number.isSafeInteger(data.systemOneBatchSize) || data.systemOneBatchSize < 1)) {
+    throw new Error('Rules per request must be a positive whole number.');
+  }
   if (data.apiType !== undefined && !['chat-completions', 'systemone'].includes(data.apiType)) throw new Error('Unknown API type.');
   if (data.decisionThreshold !== undefined) validateThreshold(data.decisionThreshold);
   if (data.inputCharacterLimit !== undefined && (!Number.isSafeInteger(data.inputCharacterLimit) || data.inputCharacterLimit < 1)) {

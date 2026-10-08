@@ -4,6 +4,7 @@ import { validCacheEntry } from '../modules/AiClassifier.js';
 const storage = (globalThis.messenger ?? browser).storage;
 const KEY_GROUPS = {
     settings: [
+        'systemOneProcessAll', 'systemOneBatchSize',
         'apiType', 'decisionThreshold', 'inputCharacterLimit', 'tokenReduction',
         'endpoint',
         'model',

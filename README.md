@@ -74,7 +74,7 @@ llama-server -hf ggml-org/Laya-GGUF
    for a single loaded model. Router deployments require the appropriate model ID.
 2. Set the default match probability threshold (initially **50%**). Each rule has
    an optional percentage override; leave it blank to inherit the default.
-3. Apply rules normally. One `noul` question is sent per evaluated rule. A rule
+3. Apply rules normally. Each uncached criterion becomes a `noul` question. A rule
    matches when the unrounded probability is **greater than or equal to** its
    effective threshold. For example, 80% matches an 80% threshold.
 4. Open Details to see a probability bar with the percentage inside. Hover over
@@ -82,6 +82,24 @@ llama-server -hf ggml-org/Laya-GGUF
    result under current settings, not an action history. Changing thresholds does
    not automatically rerun actions. Decision models provide no textual explanation;
    no second model is called to invent one. Use Chat Completions for explanations.
+
+**SystemOne batching:** **Process all** is enabled by default and sends all eligible,
+uncached criteria for an email in one request, with the email state included once.
+Turn it off to set **Rules per request** (initially 8); use 1 for sequential
+requests. The number is retained while disabled. These controls apply only to
+SystemOne; Chat Completions continues processing one rule per request.
+
+Cached rules consume no batch capacity, and identical criteria share a question
+while retaining their individual thresholds. Actions execute in rule order and
+honor stop-after-match. A batch can evaluate later rules whose actions are then
+skipped; their probabilities remain available in Details. No further batches are
+requested after stopping. Changing batch settings preserves existing cached results.
+
+If any requested answer is missing or invalid, the entire batch fails without
+caching its new answers or executing their actions. Previously completed actions
+remain applied. Sortana does not automatically retry or split rejected batches;
+if the server rejects a large request, disable Process all and reduce Rules per
+request. Limits and performance depend on the server and model.
 
 Probabilities are model estimates, not guaranteed accuracy. Evaluate thresholds
 against representative labeled emails, including long messages and attachments.

@@ -97,14 +97,7 @@ export function getCachedDetails(key, threshold = config.decisionThreshold) {
 }
 export function getCachedResult(key, threshold) { return getCachedDetails(key, threshold)?.matched ?? null; }
 export function getReason(key) { return cache.get(key)?.reason ?? null; }
-export async function classify(text, criterion, { cacheKey = null, snapshot = getConfig(), threshold = snapshot.decisionThreshold } = {}) {
-  await init();
-  if (snapshot.apiType === 'systemone') validateThreshold(threshold);
-  const cached = getCachedDetails(cacheKey, threshold);
-  if (cached) return cached;
-  const epoch = generation;
-  const adapter = adapters[snapshot.apiType];
-  const payload = adapter.buildRequest(text, criterion, snapshot);
+async function sendRequest(payload, snapshot) {
   try { await storage.local.set({ lastPayload: payload }); }
   catch (error) { aiLog('Failed to save last payload', { level: 'warn' }, error); }
   const headers = { 'Content-Type': 'application/json' };
@@ -126,7 +119,18 @@ export async function classify(text, criterion, { cacheKey = null, snapshot = ge
       ? ' Verify that the running server build supports /v1/systemone and the selected decision model.' : '';
     throw new Error(`Classification request failed: HTTP ${response.status} at ${endpoint}.${detail}${hint}`);
   }
-  const raw = await response.json();
+  return response.json();
+}
+
+export async function classify(text, criterion, { cacheKey = null, snapshot = getConfig(), threshold = snapshot.decisionThreshold } = {}) {
+  await init();
+  if (snapshot.apiType === 'systemone') validateThreshold(threshold);
+  const cached = getCachedDetails(cacheKey, threshold);
+  if (cached) return cached;
+  const epoch = generation;
+  const adapter = adapters[snapshot.apiType];
+  const payload = adapter.buildRequest(text, criterion, snapshot);
+  const raw = await sendRequest(payload, snapshot);
   const entry = { ...adapter.parseResponse(raw), backend: snapshot.apiType,
     model: typeof raw.model === 'string' ? raw.model : snapshot.model, version: 2,
     messageHash: cacheKey?.split(':')[1] };
@@ -136,6 +140,60 @@ export async function classify(text, criterion, { cacheKey = null, snapshot = ge
   }
   return withPolicy(entry, threshold);
 }
+// Yield lazily so the action runner can stop without starting the next request.
+// Candidates have precomputed keys, allowing actions to move/delete the message.
+export async function* classifyRules(text, candidates, snapshot = getConfig()) {
+  await init();
+  validateSettings(snapshot);
+  if (snapshot.apiType !== 'systemone') {
+    for (const candidate of candidates) {
+      const result = await classify(text, candidate.rule.criterion, {
+        cacheKey: candidate.cacheKey, snapshot,
+        threshold: candidate.rule.decisionThreshold ?? snapshot.decisionThreshold
+      });
+      yield { rule: candidate.rule, result };
+    }
+    return;
+  }
+  const limit = snapshot.systemOneProcessAll ? Infinity : snapshot.systemOneBatchSize;
+  // Keep received evidence locally even if persistence is cleared during this run.
+  const evidence = new Map();
+  for (const candidate of candidates) {
+    validateThreshold(candidate.rule.decisionThreshold ?? snapshot.decisionThreshold);
+    const entry = cache.get(candidate.cacheKey);
+    if (entry) evidence.set(candidate.cacheKey, entry);
+  }
+  for (let index = 0; index < candidates.length; index++) {
+    const candidate = candidates[index];
+    if (!evidence.has(candidate.cacheKey)) {
+      const pending = new Map();
+      for (let next = index; next < candidates.length && pending.size < limit; next++) {
+        const item = candidates[next];
+        if (!evidence.has(item.cacheKey) && !pending.has(item.cacheKey)) {
+          pending.set(item.cacheKey, { ...item, criterion: item.rule.criterion });
+        }
+      }
+      const questions = [...pending.values()];
+      const epoch = generation;
+      const raw = await sendRequest(systemone.buildBatchRequest(text, questions, snapshot), snapshot);
+      // Parse the complete batch before accepting any of its evidence.
+      const parsed = systemone.parseBatchResponse(raw, questions);
+      const entries = questions.map((question, i) => [question.cacheKey, {
+        ...parsed[i], backend: snapshot.apiType, version: 2,
+        model: typeof raw.model === 'string' ? raw.model : snapshot.model,
+        messageHash: question.cacheKey.split(':')[1]
+      }]);
+      for (const [key, entry] of entries) evidence.set(key, entry);
+      if (epoch === generation) {
+        for (const [key, entry] of entries) cache.set(key, entry);
+        await saveCache();
+      }
+    }
+    yield { rule: candidate.rule, result: withPolicy(evidence.get(candidate.cacheKey),
+      candidate.rule.decisionThreshold ?? snapshot.decisionThreshold) };
+  }
+}
+
 export async function classifyText(text, criterion, cacheKey = null) { return (await classify(text, criterion, { cacheKey })).matched; }
 export async function removeCacheEntries(keys = []) {
   await init(); generation++;

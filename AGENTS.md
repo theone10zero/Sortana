@@ -48,8 +48,10 @@ sent only for Chat Completions.
 
 Chat Completions sends system/user messages and extracts the last JSON object from
 `choices[0].message.content`, requiring a `match` or `matched` boolean. SystemOne
-sends prepared email text as `state` and a single `questions.match` of type `noul`.
-It requires `answers.match.type === "noul"` and a finite numeric `noul` in `[0, 1]`.
+sends prepared email text as `state` with `noul` questions identified by stable
+`rule_<snapshot index>` IDs. The single-question API still uses `match` for backward
+compatibility and cache fingerprinting. Every requested answer must have type
+`noul` and a finite numeric probability in `[0, 1]`; response order is irrelevant.
 No chat generation parameters or system prompt are sent to SystemOne.
 
 The global `decisionThreshold` defaults to 0.5; optional rule-level
@@ -66,6 +68,27 @@ the running server build and decision-model support. The rule runner stops that 
 error, and continues the next queued email. Snapshot settings and rules per email.
 `inputCharacterLimit` replaces coupling input truncation to output `max_tokens`;
 it applies with aggressive reduction and migrates from the old effective limit.
+
+### SystemOne batching
+
+`systemOneProcessAll` defaults to true; `systemOneBatchSize` defaults to 8 and must
+be a positive safe integer. Only SystemOne shows these controls. The numeric input
+is disabled while Process all is enabled, retaining its value. Include both in
+settings import/export, startup loading, live updates, and per-email snapshots.
+
+`classifyRules()` is a lazy ordered async iterator over precomputed candidate keys.
+Chat requests stay sequential. SystemOne batches the next N unique uncached keys
+(or all), sends state once, validates the whole response, and persists one batch
+of evidence before yielding ordered results. Per-rule thresholds remain independent.
+Do not change existing cache keys or include batch settings in their fingerprint.
+Prepare eligibility and keys before actions, using the existing initial mail metadata.
+
+Stop-after-match ends action iteration and prevents further requests; already
+computed later answers remain cached. A malformed answer fails its entire batch:
+no partial cache writes or new actions. Keep cache-generation guards for imports
+and clearing during inference. No automatic splitting or retries. Tests in
+`tests/batching.test.mjs` cover batching, cache reuse, failure atomicity, and actual
+rule-runner stop behavior with the real classifier.
 
 ## Documentation
 

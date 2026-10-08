@@ -79,6 +79,15 @@
                     </select></div>
                 </div>
                 <div class="field systemone-only">
+                    <label class="checkbox"><input type="checkbox" id="systemone-process-all"> Process all</label>
+                    <p class="help">Group all eligible, uncached rules for each email into one request. Actions still follow rule order and stop-after-match.</p>
+                </div>
+                <div class="field systemone-only">
+                    <label class="label" for="systemone-batch-size">Rules per request</label>
+                    <input class="input" id="systemone-batch-size" type="number" min="1" step="1" required>
+                    <p class="help">Turn off Process all to limit each request. Use 1 for one rule at a time.</p>
+                </div>
+                <div class="field systemone-only">
                     <label class="label" for="decision-threshold">Default match probability threshold (%)</label>
                     <input class="input" id="decision-threshold" type="number" min="0" max="100" step="any">
                     <p class="help">Match when probability is at least this value. Rules may override it. Evaluate thresholds on your own email examples.</p>

@@ -51,7 +51,7 @@ const messageStart = source.indexOf('browser.runtime.onMessage.addListener(');
 vm.runInContext(source.slice(messageStart, source.indexOf('\n\n    // Automatically classify', messageStart)), context);
 
 test('export/reinstall/import restores Details immediately with changed Thunderbird IDs', async () => {
-  const settings = { ...CONFIG_DEFAULTS, apiType: 'systemone', endpoint: 'http://decision-server:8080', tokenReduction: true, inputCharacterLimit: 5000 };
+  const settings = { ...CONFIG_DEFAULTS, systemOneProcessAll: false, systemOneBatchSize: 3, apiType: 'systemone', endpoint: 'http://decision-server:8080', tokenReduction: true, inputCharacterLimit: 5000 };
   const rules = [{ criterion: 'invoice', decisionThreshold: 0.8, actions: [] }];
   await storage.local.set({ ...settings, aiRules: rules });
   globalThis.fetch = async () => ({ ok: true, json: async () => ({ answers: { match: { type: 'noul', noul: 0.9 } } }) });
@@ -73,6 +73,8 @@ test('export/reinstall/import restores Details immediately with changed Thunderb
   assert.equal((await onMessage({ type: 'sortana:getDetails', id: 99 })).results.length, 0);
   await transfer.importData(exported, ['settings', 'rules', 'cache']);
   assert.equal((await onMessage({ type: 'sortana:getCacheSize' })).count, 1);
+  assert.equal(classifier.getConfig().systemOneProcessAll, false);
+  assert.equal(classifier.getConfig().systemOneBatchSize, 3);
   const details = await onMessage({ type: 'sortana:getDetails', id: 99 });
   assert.equal(details.results.length, 1);
   assert.equal(details.results[0].criterion, 'invoice');

@@ -347,7 +347,8 @@ async function processMessage(id) {
             identityId = null;
         }
 
-        for (const rule of rules) {
+        const candidates = [];
+        for (const [index, rule] of rules.entries()) {
             if (rule.enabled === false) {
                 continue;
             }
@@ -375,7 +376,9 @@ async function processMessage(id) {
                 }
             }
             const cacheKey = await AiClassifier.buildCacheKey(id, rule.criterion, snapshot);
-            const { matched } = await AiClassifier.classify(text, rule.criterion, { cacheKey, snapshot, threshold: rule.decisionThreshold ?? snapshot.decisionThreshold });
+            candidates.push({ id: `rule_${index}`, rule, cacheKey });
+        }
+        for await (const { rule, result: { matched } } of AiClassifier.classifyRules(text, candidates, snapshot)) {
             if (matched) {
                 for (const act of (rule.actions || [])) {
                     if (act.type === 'tag' && act.tagKey) {
@@ -476,7 +479,7 @@ async function clearCacheForMessages(idsInput) {
     }
 
     try {
-        const store = await storage.local.get(["apiType", "decisionThreshold", "inputCharacterLimit", "endpoint", "model", "apiKey", "openaiOrganization", "openaiProject", "customSystemPrompt", "aiParams", "debugLogging", "htmlToMarkdown", "stripUrlParams", "altTextImages", "collapseWhitespace", "tokenReduction", "aiRules", "theme", "showDebugTab"]);
+        const store = await storage.local.get(["systemOneProcessAll", "systemOneBatchSize", "apiType", "decisionThreshold", "inputCharacterLimit", "endpoint", "model", "apiKey", "openaiOrganization", "openaiProject", "customSystemPrompt", "aiParams", "debugLogging", "htmlToMarkdown", "stripUrlParams", "altTextImages", "collapseWhitespace", "tokenReduction", "aiRules", "theme", "showDebugTab"]);
         logger.setDebug(store.debugLogging);
         const { migratedInputLimit } = await import(browser.runtime.getURL('modules/classificationConfig.js'));
         if (store.inputCharacterLimit === undefined) {

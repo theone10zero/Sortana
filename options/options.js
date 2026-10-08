@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const { DEFAULT_AI_PARAMS } = await import(browser.runtime.getURL('modules/defaultParams.js'));
     const { validateSettings, migratedInputLimit } = await import(browser.runtime.getURL('modules/classificationConfig.js'));
     const defaults = await storage.local.get([
+        'systemOneProcessAll', 'systemOneBatchSize',
         'apiType', 'decisionThreshold', 'inputCharacterLimit',
         'endpoint',
         'customSystemPrompt',
@@ -90,6 +91,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     const apiTypeInput = document.getElementById('api-type');
     apiTypeInput.value = defaults.apiType || 'chat-completions';
+    const processAllInput = document.getElementById('systemone-process-all');
+    const batchSizeInput = document.getElementById('systemone-batch-size');
+    processAllInput.checked = defaults.systemOneProcessAll ?? true;
+    let savedBatchSize = defaults.systemOneBatchSize ?? 8;
+    batchSizeInput.value = savedBatchSize;
+    function updateBatchControls() {
+        batchSizeInput.disabled = processAllInput.checked || apiTypeInput.value !== 'systemone';
+    }
+    processAllInput.addEventListener('change', updateBatchControls);
     const thresholdInput = document.getElementById('decision-threshold');
     thresholdInput.value = (defaults.decisionThreshold ?? 0.5) * 100;
     const inputLimit = document.getElementById('input-character-limit');
@@ -97,6 +107,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const settingsError = document.getElementById('settings-error');
     function updateApiControls() {
         const decision = apiTypeInput.value === 'systemone';
+        updateBatchControls();
         document.querySelectorAll('.systemone-only').forEach(el => el.classList.toggle('is-hidden', !decision));
         for (const id of ['system-instructions', 'openai-organization', 'openai-project', ...Object.keys(DEFAULT_AI_PARAMS)]) {
             document.getElementById(id)?.closest('.field')?.classList.toggle('is-hidden', decision);
@@ -1097,6 +1108,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('save').addEventListener('click', async () => {
         settingsError.textContent = '';
         const apiType = apiTypeInput.value;
+        const systemOneProcessAll = processAllInput.checked;
+        const enteredBatchSize = Number(batchSizeInput.value);
+        const validBatchSize = Number.isSafeInteger(enteredBatchSize) && enteredBatchSize > 0;
+        if (!batchSizeInput.disabled && !validBatchSize) {
+            settingsError.textContent = 'Rules per request must be a positive whole number.';
+            return;
+        }
+        const systemOneBatchSize = validBatchSize ? enteredBatchSize : savedBatchSize;
         const decisionThreshold = thresholdInput.value.trim() === '' ? NaN : Number(thresholdInput.value) / 100;
         const inputCharacterLimit = Number(inputLimit.value);
         const endpoint = endpointInput.value.trim();
@@ -1127,13 +1146,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tokenReduction = tokenReductionToggle.checked;
         const showDebugTab = debugTabToggle.checked;
         const theme = themeSelect.value;
-        try { validateSettings({ apiType, decisionThreshold, inputCharacterLimit, aiRules: rules }); }
+        try { validateSettings({ systemOneProcessAll, systemOneBatchSize, apiType, decisionThreshold, inputCharacterLimit, aiRules: rules }); }
         catch (error) { settingsError.textContent = error.message; return; }
-        await storage.local.set({ apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
+        await storage.local.set({ systemOneProcessAll, systemOneBatchSize, apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
+        savedBatchSize = systemOneBatchSize;
+        batchSizeInput.value = savedBatchSize;
         await storage.local.remove(['templateName', 'customTemplate']);
         await applyTheme(theme);
         try {
-            await AiClassifier.setConfig({ apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging });
+            await AiClassifier.setConfig({ systemOneProcessAll, systemOneBatchSize, apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging });
             logger.setDebug(debugLogging);
         } catch (e) {
             logger.aiLog('[options] failed to apply config', {level: 'error'}, e);

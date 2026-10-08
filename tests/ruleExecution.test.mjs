@@ -39,10 +39,13 @@ function runner({ fail = false, changeSettings = false } = {}) {
     AiClassifier: {
       getConfig() { return structuredClone(currentConfig); },
       async buildCacheKey(id, criterion) { return `${id}:${criterion}`; },
-      async classify(text, criterion, options) {
-        evaluated.push({ text, criterion, ...options });
-        if (fail && options.cacheKey.startsWith('1:')) throw new Error('inference failed');
-        return { matched: true };
+      async *classifyRules(text, candidates, snapshot) {
+        for (const { rule, cacheKey } of candidates) {
+          evaluated.push({ text, criterion: rule.criterion, cacheKey, snapshot,
+            threshold: rule.decisionThreshold ?? snapshot.decisionThreshold });
+          if (fail && cacheKey.startsWith('1:')) throw new Error('inference failed');
+          yield { rule, result: { matched: true } };
+        }
       }
     }
   });
