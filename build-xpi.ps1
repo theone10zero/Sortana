@@ -36,9 +36,11 @@ Remove-Item -Path $zipPath,$xpiPath -Force -ErrorAction SilentlyContinue
 $allFiles = Get-ChildItem -Path $ScriptDir -Recurse -File |
   Where-Object {
     $_.Extension -notin '.sln','.ps1' -and
+    $_.Name -ne 'build-xpi.mjs' -and
     $_.FullName -notmatch '\\release\\' -and
     $_.FullName -notmatch '\\.vs\\'     -and
-    $_.FullName -notmatch '\\.git\\'
+    $_.FullName -notmatch '\\.git\\'    -and
+    $_.FullName -notmatch '\\.claude\\'
   }
 
 foreach ($file in $allFiles) {

@@ -50,9 +50,11 @@ mapfile -d '' files < <(
     ! -name '*.sln' \
     ! -name '*.ps1' \
     ! -name '*.sh' \
+    ! -name 'build-xpi.mjs' \
     ! -path "$release_dir/*" \
     ! -path "$script_dir/.vs/*" \
     ! -path "$script_dir/.git/*" \
+    ! -path "$script_dir/.claude/*" \
     -printf '%P\0'
 )
 
