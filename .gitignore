@@ -404,3 +404,7 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Local AI coding tool state (per machine, never shared)
+.claude/
+.codex
