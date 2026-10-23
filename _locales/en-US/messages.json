@@ -1,30 +1,461 @@
 {
-  "classification": { "message": "AI classification" },
-  "matches": { "message": "matches" },
-  "doesntMatch": { "message": "doesn't match" },
-  "options.title": { "message": "AI Filter Options" },
-  "options.endpoint": { "message": "Endpoint" },
-  "options.systemInstructions": { "message": "System instructions" },
-  "options.reset": { "message": "Reset to default" },
-  "options.save": { "message": "Save" },
-  "options.debugLogging": { "message": "Enable debug logging" },
-  "options.htmlToMarkdown": { "message": "Convert HTML body to Markdown" },
-  "options.stripUrlParams": { "message": "Remove URL tracking parameters" },
-  "options.altTextImages": { "message": "Replace images with alt text" },
-  "options.collapseWhitespace": { "message": "Collapse long whitespace" },
-  "options.tokenReduction": { "message": "Aggressive token reduction" }
-  ,"action.read": { "message": "read" }
-  ,"action.flag": { "message": "flag" }
-    ,"action.copy": { "message": "copy" }
-    ,"action.delete": { "message": "delete" }
-  ,"action.archive": { "message": "archive" }
-  ,"action.forward": { "message": "forward" }
-  ,"action.reply": { "message": "reply" }
-  ,"param.markRead": { "message": "mark read" }
-  ,"param.markUnread": { "message": "mark unread" }
-  ,"param.flag": { "message": "flag" }
-  ,"param.unflag": { "message": "unflag" }
-  ,"param.address": { "message": "address" }
-  ,"param.replyAll": { "message": "reply all" }
-  ,"param.replySender": { "message": "reply sender" }
+  "param.address": {
+    "message": "address"
+  },
+  "app.logoAlt": {
+    "message": "Sortana logo"
+  },
+  "app.optionsTitle": {
+    "message": "AI Filter Options"
+  },
+  "tab.settings": {
+    "message": "Settings"
+  },
+  "tab.rules": {
+    "message": "Rules"
+  },
+  "tab.maintenance": {
+    "message": "Maintenance"
+  },
+  "tab.errors": {
+    "message": "Errors"
+  },
+  "tab.debug": {
+    "message": "Debug"
+  },
+  "action.save": {
+    "message": "Save"
+  },
+  "action.reset": {
+    "message": "Reset to default"
+  },
+  "action.advanced": {
+    "message": "Advanced"
+  },
+  "action.addRule": {
+    "message": "Add Rule"
+  },
+  "action.addAction": {
+    "message": "Add Action"
+  },
+  "action.remove": {
+    "message": "Remove"
+  },
+  "action.show": {
+    "message": "Show"
+  },
+  "action.hide": {
+    "message": "Hide"
+  },
+  "action.refresh": {
+    "message": "Refresh"
+  },
+  "action.clearCache": {
+    "message": "Clear Cache"
+  },
+  "action.resetTiming": {
+    "message": "Reset Timing Stats"
+  },
+  "action.export": {
+    "message": "Export Data"
+  },
+  "action.import": {
+    "message": "Import Data"
+  },
+  "settings.heading": {
+    "message": "Settings"
+  },
+  "settings.apiType": {
+    "message": "API type"
+  },
+  "settings.processAll": {
+    "message": "Process all"
+  },
+  "settings.processAllHelp": {
+    "message": "Group all eligible, uncached rules for each email into one request. Actions still follow rule order and stop-after-match."
+  },
+  "settings.batchSize": {
+    "message": "Rules per request"
+  },
+  "settings.batchSizeHelp": {
+    "message": "Turn off Process all to limit each request. Use 1 for one rule at a time."
+  },
+  "settings.threshold": {
+    "message": "Default match probability threshold (%)"
+  },
+  "settings.thresholdHelp": {
+    "message": "Match when probability is at least this value. Rules may override it. Evaluate thresholds on your own email examples."
+  },
+  "settings.endpoint": {
+    "message": "Endpoint"
+  },
+  "settings.endpointResolved": {
+    "message": "Resolved endpoint: $URL$"
+  },
+  "settings.endpointInvalid": {
+    "message": "Resolved endpoint: (invalid)"
+  },
+  "settings.apiToken": {
+    "message": "API Token"
+  },
+  "settings.apiTokenHelp": {
+    "message": "Sent as an Authorization: Bearer header, following the OpenAI-compatible convention. Leave blank for endpoints that need no authentication."
+  },
+  "settings.model": {
+    "message": "Model"
+  },
+  "settings.modelNone": {
+    "message": "None (omit model)"
+  },
+  "settings.modelStored": {
+    "message": "Stored: $MODEL$"
+  },
+  "settings.modelInvalid": {
+    "message": "Set a valid endpoint to load models."
+  },
+  "settings.modelLoading": {
+    "message": "Loading models..."
+  },
+  "settings.modelLoaded": {
+    "message": "Loaded $COUNT$ model(s)."
+  },
+  "settings.modelEmpty": {
+    "message": "No models returned."
+  },
+  "settings.modelCors": {
+    "message": "Failed to load models. The server responded, but Thunderbird may have blocked access to the response. Check CORS on the AI server and verify the endpoint is reachable from the add-on."
+  },
+  "settings.modelFailed": {
+    "message": "Failed to load models. Check the endpoint, HTTP status, and network."
+  },
+  "settings.systemInstructions": {
+    "message": "System instructions"
+  },
+  "settings.systemInstructionsPlaceholder": {
+    "message": "Enter system instructions..."
+  },
+  "settings.promptLanguage": {
+    "message": "Prompt language"
+  },
+  "settings.promptLanguageHelp": {
+    "message": "Language used for the classification prompt and the returned reason. Auto follows the language of your criterion."
+  },
+  "settings.promptLanguageAuto": {
+    "message": "Auto (follow criterion)"
+  },
+  "settings.promptLanguageZh": {
+    "message": "Chinese"
+  },
+  "settings.promptLanguageEn": {
+    "message": "English"
+  },
+  "settings.theme": {
+    "message": "Theme"
+  },
+  "settings.themeAuto": {
+    "message": "Match Thunderbird"
+  },
+  "settings.themeLight": {
+    "message": "Light"
+  },
+  "settings.themeDark": {
+    "message": "Dark"
+  },
+  "adv.organization": {
+    "message": "OpenAI Organization"
+  },
+  "adv.organizationHelp": {
+    "message": "Optional header for OpenAI-hosted endpoints."
+  },
+  "adv.project": {
+    "message": "OpenAI Project"
+  },
+  "adv.projectHelp": {
+    "message": "Optional header for OpenAI-hosted endpoints."
+  },
+  "adv.debugLogging": {
+    "message": "Enable debug logging"
+  },
+  "adv.htmlToMarkdown": {
+    "message": "Convert HTML body to Markdown"
+  },
+  "adv.stripUrlParams": {
+    "message": "Remove URL tracking parameters"
+  },
+  "adv.altTextImages": {
+    "message": "Replace images with alt text"
+  },
+  "adv.collapseWhitespace": {
+    "message": "Collapse long whitespace"
+  },
+  "adv.tokenReduction": {
+    "message": "Aggressive token reduction"
+  },
+  "adv.showDebugTab": {
+    "message": "Show debug information"
+  },
+  "adv.inputCharLimit": {
+    "message": "Input character limit"
+  },
+  "adv.inputCharLimitHelp": {
+    "message": "Applied with aggressive reduction. Characters are not tokens; leave room for instructions within your model's context limit."
+  },
+  "adv.inputCharLimitEstimate": {
+    "message": "About $LATIN$ tokens for Latin text, about $HAN$ tokens for Chinese text."
+  },
+  "adv.inputCharLimitEstimateHint": {
+    "message": "Chinese text uses roughly one token per character, Latin text roughly four characters per token."
+  },
+  "adv.maxTokens": {
+    "message": "Maximum output tokens"
+  },
+  "adv.temperature": {
+    "message": "Temperature"
+  },
+  "adv.topP": {
+    "message": "Top P"
+  },
+  "adv.seed": {
+    "message": "Seed"
+  },
+  "adv.repetitionPenalty": {
+    "message": "Repetition penalty"
+  },
+  "adv.topK": {
+    "message": "Top K"
+  },
+  "adv.minP": {
+    "message": "Min P"
+  },
+  "adv.presencePenalty": {
+    "message": "Presence penalty"
+  },
+  "adv.frequencyPenalty": {
+    "message": "Frequency penalty"
+  },
+  "adv.typicalP": {
+    "message": "Typical P"
+  },
+  "adv.tfs": {
+    "message": "TFS"
+  },
+  "rules.heading": {
+    "message": "Classification Rules"
+  },
+  "rules.criterion": {
+    "message": "Criterion"
+  },
+  "rules.criterionPlaceholder": {
+    "message": "e.g. Does this email need a reply soon?"
+  },
+  "rules.disabled": {
+    "message": "(Disabled)"
+  },
+  "rules.accounts": {
+    "message": "Accounts"
+  },
+  "rules.folders": {
+    "message": "Folders"
+  },
+  "rules.minDays": {
+    "message": "Min days"
+  },
+  "rules.maxDays": {
+    "message": "Max days"
+  },
+  "rules.threshold": {
+    "message": "Match probability threshold (%) — blank uses default"
+  },
+  "rules.condStop": {
+    "message": "Stop"
+  },
+  "rules.condUnread": {
+    "message": "Unread"
+  },
+  "rules.condAge": {
+    "message": "Age"
+  },
+  "rules.condAccounts": {
+    "message": "Accounts"
+  },
+  "rules.condFolders": {
+    "message": "Folders"
+  },
+  "rules.stopAfterMatch": {
+    "message": "Stop after match"
+  },
+  "rules.unreadOnly": {
+    "message": "Only apply to unread messages"
+  },
+  "actionType.tag": {
+    "message": "Tag"
+  },
+  "actionType.move": {
+    "message": "Move"
+  },
+  "actionType.copy": {
+    "message": "Copy"
+  },
+  "actionType.junk": {
+    "message": "Junk"
+  },
+  "actionType.read": {
+    "message": "Read"
+  },
+  "actionType.flag": {
+    "message": "Flag"
+  },
+  "actionType.delete": {
+    "message": "Delete"
+  },
+  "actionType.archive": {
+    "message": "Archive"
+  },
+  "actionType.forward": {
+    "message": "Forward"
+  },
+  "actionType.reply": {
+    "message": "Reply"
+  },
+  "param.markJunk": {
+    "message": "mark junk"
+  },
+  "param.markNotJunk": {
+    "message": "mark not junk"
+  },
+  "param.markRead": {
+    "message": "mark read"
+  },
+  "param.markUnread": {
+    "message": "mark unread"
+  },
+  "param.flag": {
+    "message": "flag"
+  },
+  "param.unflag": {
+    "message": "unflag"
+  },
+  "param.replyAll": {
+    "message": "reply all"
+  },
+  "param.replySender": {
+    "message": "reply sender"
+  },
+  "maint.heading": {
+    "message": "Maintenance"
+  },
+  "maint.ruleCount": {
+    "message": "Rule count"
+  },
+  "maint.cacheEntries": {
+    "message": "Cache entries"
+  },
+  "maint.queueItems": {
+    "message": "Queue items"
+  },
+  "maint.currentTime": {
+    "message": "Current run time"
+  },
+  "maint.lastTime": {
+    "message": "Last run time"
+  },
+  "maint.averageTime": {
+    "message": "Average run time"
+  },
+  "maint.totalTime": {
+    "message": "Total run time"
+  },
+  "maint.perHour": {
+    "message": "Messages per hour"
+  },
+  "maint.perDay": {
+    "message": "Messages per day"
+  },
+  "maint.dataCategories": {
+    "message": "Data categories"
+  },
+  "maint.categorySettings": {
+    "message": "Settings"
+  },
+  "maint.categoryRules": {
+    "message": "Rules"
+  },
+  "maint.categoryCache": {
+    "message": "Cache"
+  },
+  "errors.heading": {
+    "message": "Session Errors"
+  },
+  "errors.empty": {
+    "message": "No errors have been recorded since the last start."
+  },
+  "errors.logTitle": {
+    "message": "Error Log"
+  },
+  "errors.visibleSession": {
+    "message": "Visible only for this session."
+  },
+  "errors.unknown": {
+    "message": "Unknown error"
+  },
+  "errors.generic": {
+    "message": "Error"
+  },
+  "debug.promptDiff": {
+    "message": "Prompt diff"
+  },
+  "debug.tokenReduction": {
+    "message": "Prompt Token Reduction: $PERCENT$%"
+  },
+  "bg.menu.applyRules": {
+    "message": "Apply AI Rules"
+  },
+  "bg.menu.clearCache": {
+    "message": "Clear AI Cache"
+  },
+  "bg.menu.viewReasoning": {
+    "message": "View Reasoning"
+  },
+  "bg.actionDetails": {
+    "message": "Details"
+  },
+  "bg.notifyTitle": {
+    "message": "Sortana Error"
+  },
+  "bg.notifyApplyFailed": {
+    "message": "Failed to apply AI rules"
+  },
+  "bg.errorApplyFailed": {
+    "message": "Failed to apply AI rules"
+  },
+  "bg.errorUnhandledRejection": {
+    "message": "Unhandled promise rejection"
+  },
+  "details.title": {
+    "message": "AI Details"
+  },
+  "details.matched": {
+    "message": "Matched"
+  },
+  "details.notMatched": {
+    "message": "Did not match"
+  },
+  "details.underThreshold": {
+    "message": "under current threshold"
+  },
+  "details.thresholdTooltip": {
+    "message": "Threshold: $THRESHOLD$%"
+  },
+  "details.thresholdModelTooltip": {
+    "message": "Threshold: $THRESHOLD$% · Model: $MODEL$"
+  },
+  "error.batchSize": {
+    "message": "Rules per request must be a positive whole number."
+  },
+  "error.thresholdRange": {
+    "message": "Enter thresholds from 0% to 100% and a positive whole-number character limit."
+  },
+  "error.importFailed": {
+    "message": "Import failed: $MESSAGE$"
+  }
 }

@@ -2,6 +2,7 @@ import { DEFAULT_AI_PARAMS } from './defaultParams.js';
 export const CONFIG_DEFAULTS = {
   apiType: 'chat-completions', endpoint: 'http://127.0.0.1:5000', model: '',
   apiKey: '', openaiOrganization: '', openaiProject: '', customSystemPrompt: '',
+  promptLanguage: 'auto',
   systemOneProcessAll: true, systemOneBatchSize: 8,
   decisionThreshold: 0.5, inputCharacterLimit: 3686, aiParams: DEFAULT_AI_PARAMS,
   htmlToMarkdown: false, stripUrlParams: false, altTextImages: false,
@@ -21,6 +22,9 @@ export function validateSettings(data) {
     throw new Error('Rules per request must be a positive whole number.');
   }
   if (data.apiType !== undefined && !['chat-completions', 'systemone'].includes(data.apiType)) throw new Error('Unknown API type.');
+  if (data.promptLanguage !== undefined && !['auto', 'zh-CN', 'en'].includes(data.promptLanguage)) {
+    throw new Error('Unknown prompt language.');
+  }
   if (data.decisionThreshold !== undefined) validateThreshold(data.decisionThreshold);
   if (data.inputCharacterLimit !== undefined && (!Number.isSafeInteger(data.inputCharacterLimit) || data.inputCharacterLimit < 1)) {
     throw new Error('Input character limit must be a positive integer.');

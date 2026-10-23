@@ -13,8 +13,14 @@ The options page stores a base URL and shows the resolved request URL.
 ## Features
 
 - **Configurable endpoint** – set the classification service base URL on the options page.
+- **Localized interface** – the add-on follows Thunderbird's display language.
+  English, Simplified Chinese and Traditional Chinese ship in the box.
 - **Model selection** – load available models from the endpoint and choose one (or omit the model field).
-- **Optional OpenAI auth headers** – provide an API key plus optional organization/project headers when needed.
+- **API Token** – enter the token issued by your OpenAI-compatible service in the
+  Settings tab. It is sent as an `Authorization: Bearer` header and applies to
+  both API types. Leave it blank for endpoints that need no authentication.
+- **Optional OpenAI auth headers** – add organization/project headers when the
+  endpoint is OpenAI-hosted. These apply to Chat Completions only.
 - **Custom system prompts** – tailor the instructions sent as the system message for more precise results.
 - **Persistent result caching** – classification results and reasoning are saved to disk so messages aren't re-evaluated across restarts.
 - **Advanced parameters (Chat Completions)** – tune generation settings like temperature, top‑p and more from the options page.
@@ -120,6 +126,45 @@ results are never cached. Actions already completed are not rolled back.
 
 Upstream: [llama-server SystemOne documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#typesafe-compatible-api-endpoints).
 
+### Localization and Chinese support
+
+The interface language follows Thunderbird's display language, so a Chinese
+Thunderbird shows the add-on in Chinese without any configuration. English
+(`en-US`), Simplified Chinese (`zh_CN`) and Traditional Chinese (`zh_TW`) are
+shipped in `_locales/`.
+
+The **prompt language** is a separate setting, because the interface language
+and the language of your mail are unrelated. Under Settings → *Prompt language*:
+
+- **Auto (follow criterion)** – the default. A criterion written in Chinese
+  produces a Chinese prompt and a Chinese explanation in the Details popup; a
+  criterion in any other language uses English. The language is decided from
+  your criterion, not from the message body.
+- **Chinese** / **English** – pin the prompt language regardless of the criterion.
+
+Whichever you pick, the explanation shown in the Details popup is written in
+that language, and the model is asked to answer in it.
+
+A few things behave differently for Chinese mail and are worth knowing:
+
+- **Character limits are not token limits.** The *Input character limit* is a
+  character count. Latin text runs about four characters per token; Chinese runs
+  roughly one, so the same number buys a Chinese sender about a quarter of the
+  text. The options page shows both readings next to the field. If your model
+  truncates Chinese mail sooner than you expect, lower the limit so the
+  truncated text is still a complete thought, or raise it and make sure the
+  model has the context room.
+- **Threshold expectations differ.** Decision models are often better calibrated
+  on English mail. Evaluate your threshold against a set of Chinese examples
+  you have labelled yourself rather than trusting the default.
+- **Mail clients encode non-ASCII values.** Sortana decodes encoded subject
+  lines, sender names and attachment names before sending them to the service,
+  so a Chinese subject arrives as text rather than as `=?UTF-8?B?…?=`.
+- **URLs followed by Chinese text.** With *Remove URL tracking parameters*
+  enabled, the link is trimmed but the Chinese sentence after it is left intact.
+- **Simplified and Traditional Chinese are separate.** The prompt follows
+  whichever you write your criterion in; no conversion is performed.
+
 ### Verification
 
 Run the dependency-free tests with Node.js 22 or newer:
@@ -130,9 +175,12 @@ node --test tests/*.test.mjs
 
 Tests cover adapters, thresholds, URLs, settings validation, cache migration and
 reuse, request failures, per-email snapshots, and queue behavior with mocked
-Thunderbird services. Manual acceptance testing in Thunderbird should verify both
-API types, model discovery, rule overrides and ordering, import/export, cache
-clearing, Details, and stop-after-match against a running server.
+Thunderbird services. `tests/i18n.test.mjs` additionally covers the message
+catalogs, the prompt language resolution, the cache fingerprint stability of the
+English templates, and the non-ASCII text handling. Manual acceptance testing in
+Thunderbird should verify both API types, model discovery, rule overrides and
+ordering, import/export, cache clearing, Details, and stop-after-match against a
+running server.
 
 ## Architecture Overview
 
@@ -152,30 +200,43 @@ Sortana is implemented entirely with documented MailExtension/WebExtension APIs.
 | `manifest.json`                         | Extension manifest and entry points. |
 | `background.js`                         | Startup tasks and classification queue management. |
 | `modules/AiClassifier.js`               | Core classification logic and cache handling. |
+| `modules/i18n.js`                       | Message lookup and DOM translation helpers. |
+| `modules/promptLanguage.js`             | Resolves the language of the classification prompt. |
+| `_locales/`                             | Message catalogs for `en-US`, `zh_CN` and `zh_TW`. |
 | `options/options.html` and `options.js` | Endpoint and rule configuration UI. |
 | `details.html` and `details.js`         | View stored classification evidence for a message. |
 | `logger.js`                             | Colorized logging with optional debug mode. |
 
 ## Building
 
-1. Ensure PowerShell is available on Windows or bash, `python3`, and Inkscape are
-   available on Linux.
-2. The Bulma stylesheet (v1.0.3) is already included as `options/bulma.css`.
-3. Run `powershell ./build-xpi.ps1` or `./build-xpi.sh` from the repository root.
-   The script reads the version from `manifest.json` and creates an XPI in the
-   `release` folder.
-4. Install the generated XPI in Thunderbird via the Add-ons Manager. During
+1. The Bulma stylesheet (v1.0.3) is already included as `options/bulma.css`.
+2. Run one of the build scripts from the repository root. Each reads the
+   version from `manifest.json` and creates `release/sortana-<version>.xpi`:
+
+   | Script | Needs |
+   | --- | --- |
+   | `node build-xpi.mjs` | Node.js only — no external tools |
+   | `./build-xpi.sh` | bash, `zip`, and `jq` or `python3` |
+   | `powershell ./build-xpi.ps1` | PowerShell |
+
+   The Node script is the portable option: it writes the archive with the
+   built-in `zlib` module and reads the archive back to verify every entry
+   before reporting success, so it needs nothing installed beyond Node.js.
+   Pass `--quiet` to only print the result.
+3. Install the generated XPI in Thunderbird via the Add-ons Manager. During
    development you can also load the directory as a temporary add-on.
-5. To regenerate PNG icons from the SVG sources, run `resources/svg2img.ps1` on
-   Windows or `./resources/svg2img.sh` on Linux.
+4. To regenerate PNG icons from the SVG sources, run `resources/svg2img.ps1` on
+   Windows or `./resources/svg2img.sh` on Linux. Inkscape is required for that.
 
 ## Usage
 
 1. Open the add-on's options and set the base URL of your classification service
    (Sortana appends the path for the selected API type). Use the Model dropdown to load
    `/v1/models` and select a model or choose **None** to omit the `model` field.
-   Advanced settings include optional API key, organization, and project headers
-   for OpenAI-hosted endpoints.
+   Paste the **API Token** issued by your service into the *API Token* field next
+   to the endpoint — it is sent as an `Authorization: Bearer` header, and you can
+   click *Show* to check what you pasted. Advanced settings include optional
+   organization and project headers for OpenAI-hosted endpoints.
  2. Use the **Classification Rules** section to add a criterion and optional
    actions such as tagging, moving, copying, forwarding, replying,
    deleting or archiving a message when it matches. Drag rules to
@@ -186,6 +247,13 @@ Sortana is implemented entirely with documented MailExtension/WebExtension APIs.
  circle buttons for optional conditions show a filled dot when active, and
  check *Stop after match* to halt further processing. Forward and reply actions
    open a compose window using the account that received the message.
+
+   Actions are applied in a safe order regardless of the order you list them:
+   tagging, marking read or flagged, forwarding and replying happen first,
+   then copying, then moving or archiving, and deleting comes last. Thunderbird
+   gives a message a new internal id when it is moved, so applying the
+   property changes first keeps every action working — including the actions
+   of a later rule.
 3. Save your settings. New mail will be evaluated automatically using the
    configured rules.
 4. If the toolbar icon shows a red X, it will clear after a few seconds. Open the Errors tab in Options to review the latest failures.
@@ -217,6 +285,23 @@ Here are some useful and fun example criteria you can use in your filters. Filte
 
 You can define as many filters as you'd like, each using a different prompt and
 triggering tags, moves, copies, deletes, archives, read/unread changes or flag updates based on the model's classification.
+
+### Example Filters (Chinese)
+
+The same ideas work in Chinese, and Chinese criteria are more compact — a few
+characters carry as much meaning as a short English sentence:
+
+- **"这封邮件需要我尽快回复或做决定吗？"** — 找出有截止日期、有请求或需要你采取行动的邮件。
+- **"这封邮件是垃圾邮件、钓鱼邮件，还是无关的批量邮件？"** — 识别低价值或欺骗性的邮件，移入垃圾箱。
+- **"这封邮件是账单、发票或物流通知吗？"** — 归档交易类邮件，方便日后查找。
+- **"这封邮件是促销广告或群发消息吗？"** — 清理订阅邮件与营销活动。
+- **"这封邮件和我的某个工作项目有关吗？"** — 让收件箱围绕当前的工作重点运转。
+- **"这封邮件是朋友或家人的私人消息吗？"** — 让有情感价值的邮件不被淹没。
+- **"这封邮件需要我本人处理，还是可以稍后再说？"** — 把真正紧急的邮件挑出来。
+
+If you use Chat Completions, the **reason** shown in the Details popup is
+written in the same language as your criterion. If you write criteria in
+Traditional Chinese, they stay Traditional; no conversion is performed.
 
 ## Required Permissions
 

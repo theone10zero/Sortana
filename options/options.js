@@ -6,11 +6,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const { detectSystemTheme } = await import(browser.runtime.getURL('modules/themeUtils.js'));
     const { DEFAULT_AI_PARAMS } = await import(browser.runtime.getURL('modules/defaultParams.js'));
     const { validateSettings, migratedInputLimit } = await import(browser.runtime.getURL('modules/classificationConfig.js'));
+    const { t, applyToDocument, currentLocale } = await import(browser.runtime.getURL('modules/i18n.js'));
+    document.documentElement.lang = currentLocale();
+    applyToDocument(document);
     const defaults = await storage.local.get([
         'systemOneProcessAll', 'systemOneBatchSize',
         'apiType', 'decisionThreshold', 'inputCharacterLimit',
         'endpoint',
         'customSystemPrompt',
+        'promptLanguage',
         'model',
         'apiKey',
         'openaiOrganization',
@@ -104,6 +108,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     thresholdInput.value = (defaults.decisionThreshold ?? 0.5) * 100;
     const inputLimit = document.getElementById('input-character-limit');
     inputLimit.value = migratedInputLimit(defaults);
+    const inputLimitEstimate = document.getElementById('input-char-limit-estimate');
+    function updateInputLimitEstimate() {
+        const limit = Number(inputLimit.value);
+        if (!Number.isFinite(limit) || limit <= 0) {
+            inputLimitEstimate.textContent = '';
+            return;
+        }
+        // Latin text averages ~4 characters per token, Chinese ~1 character per
+        // token, so the same character limit buys a very different token budget.
+        inputLimitEstimate.textContent = t('adv.inputCharLimitEstimate', {
+            LATIN: Math.round(limit / 4),
+            HAN: Math.round(limit)
+        });
+    }
+    inputLimit.addEventListener('input', updateInputLimitEstimate);
+    updateInputLimitEstimate();
+    const promptLanguageSelect = document.getElementById('prompt-language');
+    promptLanguageSelect.value = ['auto', 'zh-CN', 'en'].includes(defaults.promptLanguage)
+        ? defaults.promptLanguage
+        : 'auto';
     const settingsError = document.getElementById('settings-error');
     function updateApiControls() {
         const decision = apiTypeInput.value === 'systemone';
@@ -126,8 +150,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     function updateEndpointPreview() {
         const resolved = AiClassifier.buildEndpointUrl(endpointInput.value, apiTypeInput.value);
         endpointPreview.textContent = resolved
-            ? `Resolved endpoint: ${resolved}`
-            : 'Resolved endpoint: (invalid)';
+            ? t('settings.endpointResolved', { URL: resolved })
+            : t('settings.endpointInvalid');
     }
     endpointInput.addEventListener('input', updateEndpointPreview);
     updateApiControls();
@@ -150,13 +174,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const noneOpt = document.createElement('option');
         noneOpt.value = '';
-        noneOpt.textContent = 'None (omit model)';
+        noneOpt.textContent = t('settings.modelNone');
         modelSelect.appendChild(noneOpt);
 
         if (selectedModel && !modelIds.includes(selectedModel)) {
             const storedOpt = document.createElement('option');
             storedOpt.value = selectedModel;
-            storedOpt.textContent = `Stored: ${selectedModel}`;
+            storedOpt.textContent = t('settings.modelStored', { MODEL: selectedModel });
             modelSelect.appendChild(storedOpt);
         }
 
@@ -196,13 +220,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             logger.aiLog('[options] model refresh skipped: invalid endpoint', { level: 'warn' }, {
                 endpoint: endpointInput.value
             });
-            setModelHelp('Set a valid endpoint to load models.', true);
+            setModelHelp(t('settings.modelInvalid'), true);
             populateModelOptions([], selectedModel);
             return;
         }
 
         refreshModelsBtn.disabled = true;
-        setModelHelp('Loading models...');
+        setModelHelp(t('settings.modelLoading'));
         const headers = buildAuthHeaders();
         logger.aiLog('[options] loading models', {}, {
             endpoint: endpointInput.value,
@@ -246,15 +270,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 models
             });
             populateModelOptions(models, selectedModel);
-            setModelHelp(models.length ? `Loaded ${models.length} model${models.length === 1 ? '' : 's'}.` : 'No models returned.');
+            setModelHelp(models.length ? t('settings.modelLoaded', { COUNT: models.length }) : t('settings.modelEmpty'));
         } catch (e) {
             logger.aiLog('[options] failed to load models', { level: 'warn' }, e);
             const message = String(e?.message || e || '');
             const isLikelyCors = e instanceof TypeError || /Failed to fetch|NetworkError|Load failed/i.test(message);
             setModelHelp(
                 isLikelyCors
-                    ? 'Failed to load models. The server responded, but Thunderbird may have blocked access to the response. Check CORS on the AI server and verify the endpoint is reachable from the add-on.'
-                    : 'Failed to load models. Check the endpoint, HTTP status, and network.',
+                    ? t('settings.modelCors')
+                    : t('settings.modelFailed'),
                 true
             );
             populateModelOptions([], selectedModel);
@@ -292,7 +316,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!apiKeyInput) return;
         const show = apiKeyInput.type === 'password';
         apiKeyInput.type = show ? 'text' : 'password';
-        apiKeyToggle.textContent = show ? 'Hide' : 'Show';
+        apiKeyToggle.textContent = show ? t('action.hide') : t('action.show');
     });
 
     const debugToggle = document.getElementById('debug-logging');
@@ -332,7 +356,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const percentSaved = baseLength > 0
             ? Math.max(0, Math.round((1 - (promptLength / baseLength)) * 100))
             : 0;
-        promptReductionLabel.textContent = `Prompt Token Reduction: ${percentSaved}%`;
+        promptReductionLabel.textContent = t('debug.tokenReduction', { PERCENT: percentSaved });
         promptReductionLabel.classList.remove('is-hidden');
     }
 
@@ -397,7 +421,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const header = document.createElement('div');
             header.className = 'message-header';
             const title = document.createElement('p');
-            title.textContent = entry.context || 'Error';
+            title.textContent = entry.context || t('errors.generic');
             const time = document.createElement('span');
             time.className = 'is-size-7 has-text-weight-normal';
             time.textContent = formatErrorTime(entry.time);
@@ -407,7 +431,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             body.className = 'message-body';
             const summary = document.createElement('p');
             summary.className = 'mb-2';
-            summary.textContent = entry.message || 'Unknown error';
+            summary.textContent = entry.message || t('errors.unknown');
             body.appendChild(summary);
             if (entry.detail) {
                 const detail = document.createElement('pre');
@@ -476,11 +500,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         logger.aiLog('failed to list folders', {level:'error'}, e);
     }
 
-    const DEFAULT_SYSTEM = 'Determine whether the email satisfies the user\'s criterion.';
+    // These are the built-in defaults. Storing an empty customSystemPrompt
+    // makes the adapter fall back to the default for the resolved prompt
+    // language; for English that fallback string is byte-identical to the
+    // value stored before 4.2.0, so existing cache fingerprints are unchanged.
+    const DEFAULT_SYSTEM_EN = 'Determine whether the email satisfies the user\'s criterion.';
+    const DEFAULT_SYSTEM_ZH = '判断这封邮件是否满足用户给出的分类标准。';
     const systemBox = document.getElementById('system-instructions');
-    systemBox.value = defaults.customSystemPrompt || DEFAULT_SYSTEM;
+    function defaultSystemPrompt(language) {
+        return language === 'zh-CN' ? DEFAULT_SYSTEM_ZH : DEFAULT_SYSTEM_EN;
+    }
+    function isDefaultSystemPrompt(value) {
+        return value === DEFAULT_SYSTEM_EN || value === DEFAULT_SYSTEM_ZH;
+    }
+    systemBox.value = defaults.customSystemPrompt || defaultSystemPrompt(defaults.promptLanguage);
     document.getElementById('reset-system').addEventListener('click', () => {
-        systemBox.value = DEFAULT_SYSTEM;
+        systemBox.value = defaultSystemPrompt(promptLanguageSelect.value);
+    });
+    promptLanguageSelect.addEventListener('change', () => {
+        if (isDefaultSystemPrompt(systemBox.value)) {
+            systemBox.value = defaultSystemPrompt(promptLanguageSelect.value);
+        }
     });
 
     const rulesContainer = document.getElementById('rules-container');
@@ -506,10 +546,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const typeWrapper = document.createElement('div');
         typeWrapper.className = 'select is-small mr-2';
         const typeSelect = document.createElement('select');
-        ['tag','move','copy','junk','read','flag','delete','archive','forward','reply'].forEach(t => {
+        ['tag','move','copy','junk','read','flag','delete','archive','forward','reply'].forEach(type => {
             const opt = document.createElement('option');
-            opt.value = t;
-            opt.textContent = t;
+            opt.value = type;
+            opt.textContent = t(`actionType.${type}`);
             typeSelect.appendChild(opt);
         });
         typeSelect.value = action.type;
@@ -552,8 +592,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 wrap.className = 'select is-small';
                 const sel = document.createElement('select');
                 sel.className = 'junk-select';
-                sel.appendChild(new Option('mark junk','true'));
-                sel.appendChild(new Option('mark not junk','false'));
+                sel.appendChild(new Option(t('param.markJunk'),'true'));
+                sel.appendChild(new Option(t('param.markNotJunk'),'false'));
                 sel.value = String(action.junk ?? true);
                 wrap.appendChild(sel);
                 paramSpan.appendChild(wrap);
@@ -562,8 +602,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 wrap.className = 'select is-small';
                 const sel = document.createElement('select');
                 sel.className = 'read-select';
-                sel.appendChild(new Option('mark read','true'));
-                sel.appendChild(new Option('mark unread','false'));
+                sel.appendChild(new Option(t('param.markRead'),'true'));
+                sel.appendChild(new Option(t('param.markUnread'),'false'));
                 sel.value = String(action.read ?? true);
                 wrap.appendChild(sel);
                 paramSpan.appendChild(wrap);
@@ -572,8 +612,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 wrap.className = 'select is-small';
                 const sel = document.createElement('select');
                 sel.className = 'flag-select';
-                sel.appendChild(new Option('flag','true'));
-                sel.appendChild(new Option('unflag','false'));
+                sel.appendChild(new Option(t('param.flag'),'true'));
+                sel.appendChild(new Option(t('param.unflag'),'false'));
                 sel.value = String(action.flagged ?? true);
                 wrap.appendChild(sel);
                 paramSpan.appendChild(wrap);
@@ -582,6 +622,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 input.type = 'text';
                 input.className = 'input is-small forward-input';
                 input.placeholder = 'address@example.com';
+                input.setAttribute('aria-label', t('param.address'));
                 input.value = action.address || '';
                 paramSpan.appendChild(input);
             } else if (typeSelect.value === 'reply') {
@@ -589,8 +630,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 wrap.className = 'select is-small';
                 const sel = document.createElement('select');
                 sel.className = 'reply-select';
-                sel.appendChild(new Option('all','all'));
-                sel.appendChild(new Option('sender','sender'));
+                sel.appendChild(new Option(t('param.replyAll'),'all'));
+                sel.appendChild(new Option(t('param.replySender'),'sender'));
                 sel.value = action.replyType || 'all';
                 wrap.appendChild(sel);
                 paramSpan.appendChild(wrap);
@@ -603,7 +644,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateParams();
 
         const removeBtn = document.createElement('button');
-        removeBtn.textContent = 'Remove';
+        removeBtn.textContent = t('action.remove');
         removeBtn.type = 'button';
         removeBtn.className = 'button is-small is-danger is-light';
         removeBtn.addEventListener('click', () => row.remove());
@@ -674,7 +715,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const critInput = document.createElement('input');
             critInput.type = 'text';
-            critInput.placeholder = 'Criterion';
+            critInput.placeholder = t('rules.criterionPlaceholder');
+            critInput.setAttribute('aria-label', t('rules.criterion'));
             critInput.value = rule.criterion || '';
             critInput.className = 'input criterion mr-2';
             critInput.style.flexGrow = '1';
@@ -721,7 +763,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 toggleIcon.src = browser.runtime.getURL(
                     `resources/svg/${enabled ? 'circleslash' : 'check'}.svg`
                 );
-                statusSpan.textContent = enabled ? '' : '(Disabled)';
+                statusSpan.textContent = enabled ? '' : t('rules.disabled');
                 article.dataset.enabled = String(enabled);
             }
 
@@ -751,7 +793,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             const addAction = document.createElement('button');
-            addAction.textContent = 'Add Action';
+            addAction.textContent = t('action.addAction');
             addAction.type = 'button';
             addAction.className = 'button is-small mb-2';
             addAction.addEventListener('click', () => actionsContainer.appendChild(createActionRow()));
@@ -763,7 +805,7 @@ document.addEventListener('DOMContentLoaded', async () => {
            stopCheck.className = 'stop-processing';
            stopCheck.checked = rule.stopProcessing === true;
            stopLabel.appendChild(stopCheck);
-           stopLabel.append(' Stop after match');
+           stopLabel.append(' ' + t('rules.stopAfterMatch'));
 
             const unreadLabel = document.createElement('label');
             unreadLabel.className = 'checkbox mt-2 ml-4 is-hidden';
@@ -772,19 +814,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             unreadCheck.className = 'unread-only';
             unreadCheck.checked = rule.unreadOnly === true;
             unreadLabel.appendChild(unreadCheck);
-            unreadLabel.append(' Only apply to unread messages');
+            unreadLabel.append(' ' + t('rules.unreadOnly'));
 
             const ageBox = document.createElement('div');
             ageBox.className = 'field is-grouped mt-2 is-hidden';
             const minInput = document.createElement('input');
             minInput.type = 'number';
-            minInput.placeholder = 'Min days';
+            minInput.placeholder = t('rules.minDays');
             minInput.className = 'input is-small min-age mr-2';
             minInput.style.width = '6em';
             if (typeof rule.minAgeDays === 'number') minInput.value = rule.minAgeDays;
             const maxInput = document.createElement('input');
             maxInput.type = 'number';
-            maxInput.placeholder = 'Max days';
+            maxInput.placeholder = t('rules.maxDays');
             maxInput.className = 'input is-small max-age';
             maxInput.style.width = '6em';
             if (typeof rule.maxAgeDays === 'number') maxInput.value = rule.maxAgeDays;
@@ -795,7 +837,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             acctBox.className = 'field mt-2 is-hidden';
             const acctLabel = document.createElement('label');
             acctLabel.className = 'label';
-            acctLabel.textContent = 'Accounts';
+            acctLabel.textContent = t('rules.accounts');
             const acctControl = document.createElement('div');
             const acctWrap = document.createElement('div');
             acctWrap.className = 'select is-multiple is-small';
@@ -819,7 +861,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             folderBox.className = 'field mt-2 is-hidden';
             const folderLabel = document.createElement('label');
             folderLabel.className = 'label';
-            folderLabel.textContent = 'Folders';
+            folderLabel.textContent = t('rules.folders');
             const folderControl = document.createElement('div');
             const folderWrap = document.createElement('div');
             folderWrap.className = 'select is-multiple is-small';
@@ -859,20 +901,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 condButtons.appendChild(p);
             }
 
-            addCond(createConditionButton('Stop', null, stopCheck, () => {
+            addCond(createConditionButton(t('rules.condStop'), null, stopCheck, () => {
                 stopCheck.checked = false;
             }));
-            addCond(createConditionButton('Unread', null, unreadCheck, () => {
+            addCond(createConditionButton(t('rules.condUnread'), null, unreadCheck, () => {
                 unreadCheck.checked = false;
             }));
-            addCond(createConditionButton('Age', ageBox, null, () => {
+            addCond(createConditionButton(t('rules.condAge'), ageBox, null, () => {
                 minInput.value = '';
                 maxInput.value = '';
             }));
-            addCond(createConditionButton('Accounts', acctBox, null, () => {
+            addCond(createConditionButton(t('rules.condAccounts'), acctBox, null, () => {
                 for (const opt of acctSel.options) opt.selected = false;
             }));
-            addCond(createConditionButton('Folders', folderBox, null, () => {
+            addCond(createConditionButton(t('rules.condFolders'), folderBox, null, () => {
                 for (const opt of folderSel.options) opt.selected = false;
             }));
 
@@ -894,7 +936,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const thresholdField = document.createElement('label');
             thresholdField.className = 'field systemone-only';
             thresholdField.classList.toggle('is-hidden', apiTypeInput.value !== 'systemone');
-            thresholdField.textContent = 'Match probability threshold (%) — blank uses default';
+            thresholdField.textContent = t('rules.threshold');
             const override = document.createElement('input');
             override.className = 'input decision-threshold';
             override.type = 'number';
@@ -1098,7 +1140,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await dataTransfer.importData(importInput.files[0], selectedCategories());
                 location.reload();
             } catch (error) {
-                window.alert(`Import failed: ${error.message}`);
+                window.alert(t('error.importFailed', { MESSAGE: error.message }));
             }
         }
     });
@@ -1112,7 +1154,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const enteredBatchSize = Number(batchSizeInput.value);
         const validBatchSize = Number.isSafeInteger(enteredBatchSize) && enteredBatchSize > 0;
         if (!batchSizeInput.disabled && !validBatchSize) {
-            settingsError.textContent = 'Rules per request must be a positive whole number.';
+            settingsError.textContent = t('error.batchSize');
             return;
         }
         const systemOneBatchSize = validBatchSize ? enteredBatchSize : savedBatchSize;
@@ -1123,7 +1165,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const apiKey = apiKeyInput?.value.trim() || '';
         const openaiOrganization = openaiOrgInput?.value.trim() || '';
         const openaiProject = openaiProjectInput?.value.trim() || '';
-        const customSystemPrompt = systemBox.value;
+        // An unmodified default is stored as an empty string so the adapter
+        // can pick the default for the resolved prompt language. For English
+        // that resolves to the same string stored before 4.2.0, so the cache
+        // fingerprint is unchanged.
+        const customSystemPrompt = isDefaultSystemPrompt(systemBox.value) ? '' : systemBox.value;
+        const promptLanguage = promptLanguageSelect.value;
         const aiParamsSave = {};
         for (const key of Object.keys(DEFAULT_AI_PARAMS)) {
             const el = document.getElementById(key);
@@ -1136,7 +1183,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const htmlToMarkdown = htmlToggle.checked;
         const invalidThreshold = [...document.querySelectorAll('.decision-threshold'), thresholdInput, inputLimit].find(el => !el.checkValidity());
         if (invalidThreshold) {
-            settingsError.textContent = 'Enter thresholds from 0% to 100% and a positive whole-number character limit.';
+            settingsError.textContent = t('error.thresholdRange');
             return;
         }
         const rules = readRules().filter(r => r.criterion);
@@ -1146,15 +1193,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tokenReduction = tokenReductionToggle.checked;
         const showDebugTab = debugTabToggle.checked;
         const theme = themeSelect.value;
-        try { validateSettings({ systemOneProcessAll, systemOneBatchSize, apiType, decisionThreshold, inputCharacterLimit, aiRules: rules }); }
+        try { validateSettings({ systemOneProcessAll, systemOneBatchSize, apiType, decisionThreshold, inputCharacterLimit, promptLanguage, aiRules: rules }); }
         catch (error) { settingsError.textContent = error.message; return; }
-        await storage.local.set({ systemOneProcessAll, systemOneBatchSize, apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
+        await storage.local.set({ systemOneProcessAll, systemOneBatchSize, apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, promptLanguage, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction, aiRules: rules, theme, showDebugTab });
         savedBatchSize = systemOneBatchSize;
         batchSizeInput.value = savedBatchSize;
         await storage.local.remove(['templateName', 'customTemplate']);
         await applyTheme(theme);
         try {
-            await AiClassifier.setConfig({ systemOneProcessAll, systemOneBatchSize, apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, aiParams: aiParamsSave, debugLogging });
+            await AiClassifier.setConfig({ systemOneProcessAll, systemOneBatchSize, apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, promptLanguage, aiParams: aiParamsSave, debugLogging });
             logger.setDebug(debugLogging);
         } catch (e) {
             logger.aiLog('[options] failed to apply config', {level: 'error'}, e);

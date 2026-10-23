@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AI Filter Options</title>
+    <title data-i18n="app.optionsTitle">AI Filter Options</title>
     <link rel="stylesheet" href="bulma.css">
     <style>
         :root {
@@ -35,31 +35,38 @@
             white-space: pre-wrap;
             font-family: monospace;
         }
+        /* Prefer a CJK-capable face so Chinese text does not fall back to a
+           bitmap font on platforms without a matching system default. */
+        body, input, select, textarea, button, .label, .help, .subtitle {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+                "Source Han Sans SC", "WenQuanYi Micro Hei", Roboto, Helvetica, Arial, sans-serif;
+        }
     </style>
 </head>
 <body>
     <section class="section">
         <div class="container" id="options-container">
             <figure class="has-text-centered mb-4">
-                <img data-icon="full-logo" src="../resources/img/full-logo.png" alt="AI Filter Logo" style="max-height:40px;">
+                <img data-icon="full-logo" src="../resources/img/full-logo.png" data-i18n-alt="app.logoAlt" alt="Sortana logo" style="max-height:40px;">
             </figure>
 
             <div class="level mb-4">
                 <div class="level-left">
                     <div class="tabs" id="main-tabs">
                         <ul>
-                            <li class="is-active" data-tab="settings"><a><span class="icon is-small"><img data-icon="settings" data-size="16" src="../resources/img/settings-light-16.png" alt=""></span><span>Settings</span></a></li>
-                            <li data-tab="rules"><a><span class="icon is-small"><img data-icon="clipboarddata" data-size="16" src="../resources/img/clipboarddata-light-16.png" alt=""></span><span>Rules</span></a></li>
-                            <li data-tab="maintenance"><a><span class="icon is-small"><img data-icon="gear" data-size="16" src="../resources/img/gear-light-16.png" alt=""></span><span>Maintenance</span></a></li>
-                            <li id="errors-tab-button" class="is-hidden" data-tab="errors"><a><span class="icon is-small"><img data-icon="x" data-size="16" src="../resources/img/x-light-16.png" alt=""></span><span>Errors</span></a></li>
-                            <li id="debug-tab-button" class="is-hidden" data-tab="debug"><a><span class="icon is-small"><img data-icon="average" data-size="16" src="../resources/img/average-light-16.png" alt=""></span><span>Debug</span></a></li>
+                            <li class="is-active" data-tab="settings"><a><span class="icon is-small"><img data-icon="settings" data-size="16" src="../resources/img/settings-light-16.png" alt=""></span><span data-i18n="tab.settings">Settings</span></a></li>
+                            <li data-tab="rules"><a><span class="icon is-small"><img data-icon="clipboarddata" data-size="16" src="../resources/img/clipboarddata-light-16.png" alt=""></span><span data-i18n="tab.rules">Rules</span></a></li>
+                            <li data-tab="maintenance"><a><span class="icon is-small"><img data-icon="gear" data-size="16" src="../resources/img/gear-light-16.png" alt=""></span><span data-i18n="tab.maintenance">Maintenance</span></a></li>
+                            <li id="errors-tab-button" class="is-hidden" data-tab="errors"><a><span class="icon is-small"><img data-icon="x" data-size="16" src="../resources/img/x-light-16.png" alt=""></span><span data-i18n="tab.errors">Errors</span></a></li>
+                            <li id="debug-tab-button" class="is-hidden" data-tab="debug"><a><span class="icon is-small"><img data-icon="average" data-size="16" src="../resources/img/average-light-16.png" alt=""></span><span data-i18n="tab.debug">Debug</span></a></li>
                         </ul>
                     </div>
                 </div>
                 <div class="level-right">
                     <button class="button is-primary" id="save" disabled>
                         <span class="icon is-small"><img data-icon="flag" data-size="16" src="../resources/img/flag-light-16.png" alt=""></span>
-                        <span>Save</span>
+                        <span data-i18n="action.save">Save</span>
                     </button>
                 </div>
             </div>
@@ -69,31 +76,31 @@
             <div id="settings-tab" class="tab-content">
                 <h2 class="title is-4">
                     <span class="icon is-small"><img data-icon="settings" data-size="16" src="../resources/img/settings-light-16.png" alt=""></span>
-                    <span>Settings</span>
+                    <span data-i18n="settings.heading">Settings</span>
                 </h2>
                 <div class="field">
-                    <label class="label" for="api-type">API type</label>
+                    <label class="label" for="api-type" data-i18n="settings.apiType">API type</label>
                     <div class="select"><select id="api-type">
                         <option value="chat-completions">Chat Completions</option>
                         <option value="systemone">SystemOne</option>
                     </select></div>
                 </div>
                 <div class="field systemone-only">
-                    <label class="checkbox"><input type="checkbox" id="systemone-process-all"> Process all</label>
-                    <p class="help">Group all eligible, uncached rules for each email into one request. Actions still follow rule order and stop-after-match.</p>
+                    <label class="checkbox"><input type="checkbox" id="systemone-process-all"> <span data-i18n="settings.processAll">Process all</span></label>
+                    <p class="help" data-i18n="settings.processAllHelp">Group all eligible, uncached rules for each email into one request. Actions still follow rule order and stop-after-match.</p>
                 </div>
                 <div class="field systemone-only">
-                    <label class="label" for="systemone-batch-size">Rules per request</label>
+                    <label class="label" for="systemone-batch-size" data-i18n="settings.batchSize">Rules per request</label>
                     <input class="input" id="systemone-batch-size" type="number" min="1" step="1" required>
-                    <p class="help">Turn off Process all to limit each request. Use 1 for one rule at a time.</p>
+                    <p class="help" data-i18n="settings.batchSizeHelp">Turn off Process all to limit each request. Use 1 for one rule at a time.</p>
                 </div>
                 <div class="field systemone-only">
-                    <label class="label" for="decision-threshold">Default match probability threshold (%)</label>
+                    <label class="label" for="decision-threshold" data-i18n="settings.threshold">Default match probability threshold (%)</label>
                     <input class="input" id="decision-threshold" type="number" min="0" max="100" step="any">
-                    <p class="help">Match when probability is at least this value. Rules may override it. Evaluate thresholds on your own email examples.</p>
+                    <p class="help" data-i18n="settings.thresholdHelp">Match when probability is at least this value. Rules may override it. Evaluate thresholds on your own email examples.</p>
                 </div>
                 <div class="field">
-                    <label class="label" for="endpoint">Endpoint</label>
+                    <label class="label" for="endpoint" data-i18n="settings.endpoint">Endpoint</label>
                     <div class="control">
                         <input class="input" type="text" id="endpoint" placeholder="https://api.example.com">
                     </div>
@@ -101,7 +108,20 @@
                 </div>
 
                 <div class="field">
-                    <label class="label" for="model-select">Model</label>
+                    <label class="label" for="api-key" data-i18n="settings.apiToken">API Token</label>
+                    <div class="field has-addons">
+                        <div class="control is-expanded">
+                            <input class="input" type="password" id="api-key" placeholder="sk-...">
+                        </div>
+                        <div class="control">
+                            <button class="button" id="toggle-api-key" type="button" data-i18n="action.show">Show</button>
+                        </div>
+                    </div>
+                    <p class="help" data-i18n="settings.apiTokenHelp">Sent as an Authorization: Bearer header, following the OpenAI-compatible convention. Leave blank for endpoints that need no authentication.</p>
+                </div>
+
+                <div class="field">
+                    <label class="label" for="model-select" data-i18n="settings.model">Model</label>
                     <div class="field has-addons">
                         <div class="control is-expanded">
                             <div class="select is-fullwidth">
@@ -109,27 +129,41 @@
                             </div>
                         </div>
                         <div class="control">
-                            <button class="button" id="refresh-models" type="button">Refresh</button>
+                            <button class="button" id="refresh-models" type="button" data-i18n="action.refresh">Refresh</button>
                         </div>
                     </div>
                     <p class="help" id="model-help"></p>
                 </div>
 
                 <div class="field">
-                    <label class="label" for="system-instructions">System instructions</label>
+                    <label class="label" for="system-instructions" data-i18n="settings.systemInstructions">System instructions</label>
                     <div class="control">
-                        <textarea class="textarea" id="system-instructions" rows="4" placeholder="Enter system instructions..."></textarea>
+                        <textarea class="textarea" id="system-instructions" rows="4" data-i18n-placeholder="settings.systemInstructionsPlaceholder" placeholder="Enter system instructions..."></textarea>
                     </div>
                 </div>
 
                 <div class="field">
-                    <label class="label" for="theme-select">Theme</label>
+                    <label class="label" for="prompt-language" data-i18n="settings.promptLanguage">Prompt language</label>
+                    <div class="control">
+                        <div class="select">
+                            <select id="prompt-language">
+                                <option value="auto" data-i18n="settings.promptLanguageAuto">Auto (follow criterion)</option>
+                                <option value="zh-CN" data-i18n="settings.promptLanguageZh">Chinese</option>
+                                <option value="en" data-i18n="settings.promptLanguageEn">English</option>
+                            </select>
+                        </div>
+                    </div>
+                    <p class="help" data-i18n="settings.promptLanguageHelp">Language used for the classification prompt and the returned reason. Auto follows the language of your criterion.</p>
+                </div>
+
+                <div class="field">
+                    <label class="label" for="theme-select" data-i18n="settings.theme">Theme</label>
                     <div class="control">
                         <div class="select">
                             <select id="theme-select">
-                                <option value="auto">Match Thunderbird</option>
-                                <option value="light">Light</option>
-                                <option value="dark">Dark</option>
+                                <option value="auto" data-i18n="settings.themeAuto">Match Thunderbird</option>
+                                <option value="light" data-i18n="settings.themeLight">Light</option>
+                                <option value="dark" data-i18n="settings.themeDark">Dark</option>
                             </select>
                         </div>
                     </div>
@@ -138,143 +172,133 @@
                 <div class="buttons">
                     <button class="button is-danger" id="reset-system">
                         <span class="icon is-small"><img data-icon="reply" data-size="16" src="../resources/img/reply-light-16.png" alt=""></span>
-                        <span>Reset to default</span>
+                        <span data-i18n="action.reset">Reset to default</span>
                     </button>
                     <button class="button" id="toggle-advanced" type="button">
                         <span class="icon is-small"><img data-icon="gear" data-size="16" src="../resources/img/gear-light-16.png" alt=""></span>
-                        <span>Advanced</span>
+                        <span data-i18n="action.advanced">Advanced</span>
                     </button>
                 </div>
 
                 <div id="advanced-options" class="mt-4 is-hidden">
                     <div class="field">
-                        <label class="label" for="api-key">API key</label>
-                        <div class="field has-addons">
-                            <div class="control is-expanded">
-                                <input class="input" type="password" id="api-key" placeholder="sk-...">
-                            </div>
-                            <div class="control">
-                                <button class="button" id="toggle-api-key" type="button">Show</button>
-                            </div>
-                        </div>
-                        <p class="help">Leave blank for unauthenticated endpoints.</p>
-                    </div>
-                    <div class="field">
-                        <label class="label" for="openai-organization">OpenAI Organization</label>
+                        <label class="label" for="openai-organization" data-i18n="adv.organization">OpenAI Organization</label>
                         <div class="control">
                             <input class="input" type="text" id="openai-organization" placeholder="org-...">
                         </div>
-                        <p class="help">Optional header for OpenAI-hosted endpoints.</p>
+                        <p class="help" data-i18n="adv.organizationHelp">Optional header for OpenAI-hosted endpoints.</p>
                     </div>
                     <div class="field">
-                        <label class="label" for="openai-project">OpenAI Project</label>
+                        <label class="label" for="openai-project" data-i18n="adv.project">OpenAI Project</label>
                         <div class="control">
-                            <input class="input" type="text" id="openai-project" placeholder="proj_...">
+                            <input class="input" type="text" id="openai-project" placeholder="proj-...">
                         </div>
-                        <p class="help">Optional header for OpenAI-hosted endpoints.</p>
+                        <p class="help" data-i18n="adv.projectHelp">Optional header for OpenAI-hosted endpoints.</p>
                     </div>
                     <div class="field">
                         <label class="checkbox">
-                            <input type="checkbox" id="debug-logging"> Enable debug logging
+                            <input type="checkbox" id="debug-logging"> <span data-i18n="adv.debugLogging">Enable debug logging</span>
                         </label>
                     </div>
                     <div class="field">
                         <label class="checkbox">
-                            <input type="checkbox" id="html-to-markdown"> Convert HTML body to Markdown
+                            <input type="checkbox" id="html-to-markdown"> <span data-i18n="adv.htmlToMarkdown">Convert HTML body to Markdown</span>
                         </label>
                     </div>
                     <div class="field">
                         <label class="checkbox">
-                            <input type="checkbox" id="strip-url-params"> Remove URL tracking parameters
+                            <input type="checkbox" id="strip-url-params"> <span data-i18n="adv.stripUrlParams">Remove URL tracking parameters</span>
                         </label>
                     </div>
                     <div class="field">
                         <label class="checkbox">
-                            <input type="checkbox" id="alt-text-images"> Replace images with alt text
+                            <input type="checkbox" id="alt-text-images"> <span data-i18n="adv.altTextImages">Replace images with alt text</span>
                         </label>
                     </div>
                     <div class="field">
                         <label class="checkbox">
-                            <input type="checkbox" id="collapse-whitespace"> Collapse long whitespace
+                            <input type="checkbox" id="collapse-whitespace"> <span data-i18n="adv.collapseWhitespace">Collapse long whitespace</span>
                         </label>
                     </div>
                     <div class="field">
                         <label class="checkbox">
-                            <input type="checkbox" id="token-reduction"> Aggressive token reduction
+                            <input type="checkbox" id="token-reduction"> <span data-i18n="adv.tokenReduction">Aggressive token reduction</span>
                         </label>
                     </div>
                     <div class="field">
                         <label class="checkbox">
-                            <input type="checkbox" id="show-debug-tab"> Show debug information
+                            <input type="checkbox" id="show-debug-tab"> <span data-i18n="adv.showDebugTab">Show debug information</span>
                         </label>
                     </div>
                     <div class="field">
-                        <label class="label" for="input-character-limit">Input character limit</label>
+                        <label class="label" for="input-character-limit" data-i18n="adv.inputCharLimit">Input character limit</label>
                         <input class="input" id="input-character-limit" type="number" min="1" step="1">
-                        <p class="help">Applied with aggressive reduction. Characters are not tokens; leave room for instructions within your model's context limit.</p>
+                        <p class="help" data-i18n="adv.inputCharLimitHelp">Applied with aggressive reduction. Characters are not tokens; leave room for instructions within your model's context limit.</p>
+                        <p class="help" id="input-char-limit-estimate"></p>
+                        <p class="help" data-i18n="adv.inputCharLimitEstimateHint">Chinese text uses roughly one token per character, Latin text roughly four characters per token.</p>
                     </div>
                     <div class="field">
-                        <label class="label" for="max_tokens">Maximum output tokens</label>
+                        <label class="label" for="max_tokens" data-i18n="adv.maxTokens">Maximum output tokens</label>
                         <div class="control">
                             <input class="input" type="number" id="max_tokens">
                         </div>
                     </div>
                     <div class="field">
-                        <label class="label" for="temperature">Temperature</label>
+                        <label class="label" for="temperature" data-i18n="adv.temperature">Temperature</label>
                         <div class="control">
                             <input class="input" type="number" step="0.01" id="temperature">
                         </div>
                     </div>
                     <div class="field">
-                        <label class="label" for="top_p">Top P</label>
+                        <label class="label" for="top_p" data-i18n="adv.topP">Top P</label>
                         <div class="control">
                             <input class="input" type="number" step="0.01" id="top_p">
                         </div>
                     </div>
                     <div class="field">
-                        <label class="label" for="seed">Seed</label>
+                        <label class="label" for="seed" data-i18n="adv.seed">Seed</label>
                         <div class="control">
                             <input class="input" type="number" id="seed">
                         </div>
                     </div>
                     <div class="field">
-                        <label class="label" for="repetition_penalty">Repetition penalty</label>
+                        <label class="label" for="repetition_penalty" data-i18n="adv.repetitionPenalty">Repetition penalty</label>
                         <div class="control">
                             <input class="input" type="number" step="0.01" id="repetition_penalty">
                         </div>
                     </div>
                     <div class="field">
-                        <label class="label" for="top_k">Top K</label>
+                        <label class="label" for="top_k" data-i18n="adv.topK">Top K</label>
                         <div class="control">
                             <input class="input" type="number" id="top_k">
                         </div>
                     </div>
                     <div class="field">
-                        <label class="label" for="min_p">Min P</label>
+                        <label class="label" for="min_p" data-i18n="adv.minP">Min P</label>
                         <div class="control">
                             <input class="input" type="number" step="0.01" id="min_p">
                         </div>
                     </div>
                     <div class="field">
-                        <label class="label" for="presence_penalty">Presence penalty</label>
+                        <label class="label" for="presence_penalty" data-i18n="adv.presencePenalty">Presence penalty</label>
                         <div class="control">
                             <input class="input" type="number" step="0.01" id="presence_penalty">
                         </div>
                     </div>
                     <div class="field">
-                        <label class="label" for="frequency_penalty">Frequency penalty</label>
+                        <label class="label" for="frequency_penalty" data-i18n="adv.frequencyPenalty">Frequency penalty</label>
                         <div class="control">
                             <input class="input" type="number" step="0.01" id="frequency_penalty">
                         </div>
                     </div>
                     <div class="field">
-                        <label class="label" for="typical_p">Typical P</label>
+                        <label class="label" for="typical_p" data-i18n="adv.typicalP">Typical P</label>
                         <div class="control">
                             <input class="input" type="number" step="0.01" id="typical_p">
                         </div>
                     </div>
                     <div class="field">
-                        <label class="label" for="tfs">TFS</label>
+                        <label class="label" for="tfs" data-i18n="adv.tfs">TFS</label>
                         <div class="control">
                             <input class="input" type="number" step="0.01" id="tfs">
                         </div>
@@ -285,59 +309,59 @@
             <div id="rules-tab" class="tab-content is-hidden">
                 <h2 class="title is-4">
                     <span class="icon is-small"><img data-icon="clipboarddata" data-size="16" src="../resources/img/clipboarddata-light-16.png" alt=""></span>
-                    <span>Classification Rules</span>
+                    <span data-i18n="rules.heading">Classification Rules</span>
                 </h2>
                 <div id="rules-container"></div>
-                <button class="button is-link" id="add-rule" type="button">Add Rule</button>
+                <button class="button is-link" id="add-rule" type="button" data-i18n="action.addRule">Add Rule</button>
             </div>
 
             <div id="maintenance-tab" class="tab-content is-hidden">
                 <h2 class="title is-4">
                     <span class="icon is-small"><img data-icon="gear" data-size="16" src="../resources/img/gear-light-16.png" alt=""></span>
-                    <span>Maintenance</span>
+                    <span data-i18n="maint.heading">Maintenance</span>
                 </h2>
                 <table class="table is-fullwidth">
                     <tbody>
-                        <tr><th>Rule count</th><td id="rule-count"></td></tr>
-                        <tr><th>Cache entries</th><td id="cache-count"></td></tr>
-                        <tr><th>Queue items</th><td id="queue-count"></td></tr>
-                        <tr><th>Current run time</th><td id="current-time">--:--:--</td></tr>
-                        <tr><th>Last run time</th><td id="last-time">--:--:--</td></tr>
-                        <tr><th>Average run time</th><td id="average-time">--:--:--</td></tr>
-                        <tr><th>Total run time</th><td id="total-time">--:--:--</td></tr>
-                        <tr><th>Messages per hour</th><td id="per-hour">0</td></tr>
-                        <tr><th>Messages per day</th><td id="per-day">0</td></tr>
+                        <tr><th data-i18n="maint.ruleCount">Rule count</th><td id="rule-count"></td></tr>
+                        <tr><th data-i18n="maint.cacheEntries">Cache entries</th><td id="cache-count"></td></tr>
+                        <tr><th data-i18n="maint.queueItems">Queue items</th><td id="queue-count"></td></tr>
+                        <tr><th data-i18n="maint.currentTime">Current run time</th><td id="current-time">--:--:--</td></tr>
+                        <tr><th data-i18n="maint.lastTime">Last run time</th><td id="last-time">--:--:--</td></tr>
+                        <tr><th data-i18n="maint.averageTime">Average run time</th><td id="average-time">--:--:--</td></tr>
+                        <tr><th data-i18n="maint.totalTime">Total run time</th><td id="total-time">--:--:--</td></tr>
+                        <tr><th data-i18n="maint.perHour">Messages per hour</th><td id="per-hour">0</td></tr>
+                        <tr><th data-i18n="maint.perDay">Messages per day</th><td id="per-day">0</td></tr>
                     </tbody>
                 </table>
                 <div class="buttons">
                     <button class="button is-danger" id="clear-cache" type="button">
                         <span class="icon is-small"><img data-icon="trash" data-size="16" src="../resources/img/trash-light-16.png" alt=""></span>
-                        <span>Clear Cache</span>
+                        <span data-i18n="action.clearCache">Clear Cache</span>
                     </button>
                     <button class="button is-warning" id="reset-timing" type="button">
                         <span class="icon is-small"><img data-icon="average" data-size="16" src="../resources/img/average-light-16.png" alt=""></span>
-                        <span>Reset Timing Stats</span>
+                        <span data-i18n="action.resetTiming">Reset Timing Stats</span>
                     </button>
                 </div>
                 <div class="field mt-4">
-                    <label class="label">Data categories</label>
+                    <label class="label" data-i18n="maint.dataCategories">Data categories</label>
                     <div class="control">
-                        <label class="checkbox mr-3"><input class="transfer-category" type="checkbox" value="settings" checked> Settings</label>
-                        <label class="checkbox mr-3"><input class="transfer-category" type="checkbox" value="rules" checked> Rules</label>
-                        <label class="checkbox"><input class="transfer-category" type="checkbox" value="cache" checked> Cache</label>
+                        <label class="checkbox mr-3"><input class="transfer-category" type="checkbox" value="settings" checked> <span data-i18n="maint.categorySettings">Settings</span></label>
+                        <label class="checkbox mr-3"><input class="transfer-category" type="checkbox" value="rules" checked> <span data-i18n="maint.categoryRules">Rules</span></label>
+                        <label class="checkbox"><input class="transfer-category" type="checkbox" value="cache" checked> <span data-i18n="maint.categoryCache">Cache</span></label>
                     </div>
                 </div>
                 <div class="field is-grouped mt-4">
                     <p class="control">
                         <button class="button" id="export-data" type="button">
                             <span class="icon is-small"><img data-icon="download" data-size="16" src="../resources/img/download-light-16.png" alt=""></span>
-                            <span>Export Data</span>
+                            <span data-i18n="action.export">Export Data</span>
                         </button>
                     </p>
                     <p class="control">
                         <button class="button" id="import-data" type="button">
                             <span class="icon is-small"><img data-icon="upload" data-size="16" src="../resources/img/upload-light-16.png" alt=""></span>
-                            <span>Import Data</span>
+                            <span data-i18n="action.import">Import Data</span>
                         </button>
                         <input class="is-hidden" type="file" id="import-file" accept="application/json">
                     </p>
@@ -347,9 +371,9 @@
             <div id="errors-tab" class="tab-content is-hidden">
                 <h2 class="title is-4">
                     <span class="icon is-small"><img data-icon="x" data-size="16" src="../resources/img/x-light-16.png" alt=""></span>
-                    <span>Session Errors</span>
+                    <span data-i18n="errors.heading">Session Errors</span>
                 </h2>
-                <div id="errors-empty" class="notification is-success is-light">
+                <div id="errors-empty" class="notification is-success is-light" data-i18n="errors.empty">
                     No errors have been recorded since the last start.
                 </div>
                 <div id="errors-panel" class="is-hidden">
@@ -357,8 +381,8 @@
                         <div class="level">
                             <div class="level-left">
                                 <div>
-                                    <p class="title is-5 mb-1">Error Log</p>
-                                    <p class="subtitle is-6">Visible only for this session.</p>
+                                    <p class="title is-5 mb-1" data-i18n="errors.logTitle">Error Log</p>
+                                    <p class="subtitle is-6" data-i18n="errors.visibleSession">Visible only for this session.</p>
                                 </div>
                             </div>
                             <div class="level-right">
@@ -373,12 +397,12 @@
             <div id="debug-tab" class="tab-content is-hidden">
                 <h2 class="title is-4">
                     <span class="icon is-small"><img data-icon="average" data-size="16" src="../resources/img/average-light-16.png" alt=""></span>
-                    <span>Debug</span>
+                    <span data-i18n="tab.debug">Debug</span>
                 </h2>
                 <pre id="payload-display"></pre>
                 <div id="diff-container" class="mt-4 is-hidden">
                     <div class="is-flex is-align-items-center is-justify-content-space-between">
-                        <label class="label mb-0">Prompt diff</label>
+                        <label class="label mb-0" data-i18n="debug.promptDiff">Prompt diff</label>
                         <span id="prompt-reduction" class="tag is-info is-light is-hidden">Prompt Token Reduction: 0%</span>
                     </div>
                     <div id="diff-display" class="box content is-family-monospace"></div>

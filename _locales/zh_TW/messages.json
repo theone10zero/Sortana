@@ -1,0 +1,461 @@
+{
+  "param.address": {
+    "message": "收件地址"
+  },
+  "app.logoAlt": {
+    "message": "Sortana 標誌"
+  },
+  "app.optionsTitle": {
+    "message": "AI 篩選器選項"
+  },
+  "tab.settings": {
+    "message": "設定"
+  },
+  "tab.rules": {
+    "message": "規則"
+  },
+  "tab.maintenance": {
+    "message": "維護"
+  },
+  "tab.errors": {
+    "message": "錯誤"
+  },
+  "tab.debug": {
+    "message": "偵錯"
+  },
+  "action.save": {
+    "message": "儲存"
+  },
+  "action.reset": {
+    "message": "還原為預設值"
+  },
+  "action.advanced": {
+    "message": "進階選項"
+  },
+  "action.addRule": {
+    "message": "新增規則"
+  },
+  "action.addAction": {
+    "message": "新增動作"
+  },
+  "action.remove": {
+    "message": "移除"
+  },
+  "action.show": {
+    "message": "顯示"
+  },
+  "action.hide": {
+    "message": "隱藏"
+  },
+  "action.refresh": {
+    "message": "重新整理"
+  },
+  "action.clearCache": {
+    "message": "清除快取"
+  },
+  "action.resetTiming": {
+    "message": "重設耗時統計"
+  },
+  "action.export": {
+    "message": "匯出資料"
+  },
+  "action.import": {
+    "message": "匯入資料"
+  },
+  "settings.heading": {
+    "message": "設定"
+  },
+  "settings.apiType": {
+    "message": "API 類型"
+  },
+  "settings.processAll": {
+    "message": "全部處理"
+  },
+  "settings.processAllHelp": {
+    "message": "將每封郵件中所有符合條件且尚未快取的規則合併為一次請求。動作仍依規則順序執行，並遵循「符合後停止」。"
+  },
+  "settings.batchSize": {
+    "message": "每次請求的規則數"
+  },
+  "settings.batchSizeHelp": {
+    "message": "關閉「全部處理」即可限制每次請求的規則數量。設為 1 表示每次只處理一條規則。"
+  },
+  "settings.threshold": {
+    "message": "預設符合機率閾值（%）"
+  },
+  "settings.thresholdHelp": {
+    "message": "當機率不低於此值時判定為符合。規則可個別覆寫此值。建議以您自己的郵件範例評估閾值。"
+  },
+  "settings.endpoint": {
+    "message": "端點位址"
+  },
+  "settings.endpointResolved": {
+    "message": "實際端點：$URL$"
+  },
+  "settings.endpointInvalid": {
+    "message": "實際端點：（無效）"
+  },
+  "settings.apiToken": {
+    "message": "API Token"
+  },
+  "settings.apiTokenHelp": {
+    "message": "依 OpenAI 相容介面的慣例,以 Authorization: Bearer 標頭傳送。無需驗證的介面可留空。"
+  },
+  "settings.model": {
+    "message": "模型"
+  },
+  "settings.modelNone": {
+    "message": "無（不傳送 model 欄位）"
+  },
+  "settings.modelStored": {
+    "message": "已儲存：$MODEL$"
+  },
+  "settings.modelInvalid": {
+    "message": "請先設定有效的端點位址以載入模型。"
+  },
+  "settings.modelLoading": {
+    "message": "正在載入模型……"
+  },
+  "settings.modelLoaded": {
+    "message": "已載入 $COUNT$ 個模型。"
+  },
+  "settings.modelEmpty": {
+    "message": "未回傳任何模型。"
+  },
+  "settings.modelCors": {
+    "message": "載入模型失敗。伺服器已有回應，但 Thunderbird 可能阻擋了對該回應的存取。請檢查 AI 伺服器的 CORS 設定，並確認附加元件可以連線至該端點。"
+  },
+  "settings.modelFailed": {
+    "message": "載入模型失敗。請檢查端點位址、HTTP 狀態碼與網路連線。"
+  },
+  "settings.systemInstructions": {
+    "message": "系統提示詞"
+  },
+  "settings.systemInstructionsPlaceholder": {
+    "message": "請輸入系統提示詞……"
+  },
+  "settings.promptLanguage": {
+    "message": "提示詞語言"
+  },
+  "settings.promptLanguageHelp": {
+    "message": "用於生成分類提示詞與符合理由的語言。「自動」會跟隨分類標準所使用的語言。"
+  },
+  "settings.promptLanguageAuto": {
+    "message": "自動（跟隨分類標準）"
+  },
+  "settings.promptLanguageZh": {
+    "message": "中文"
+  },
+  "settings.promptLanguageEn": {
+    "message": "英文"
+  },
+  "settings.theme": {
+    "message": "佈景"
+  },
+  "settings.themeAuto": {
+    "message": "跟隨 Thunderbird"
+  },
+  "settings.themeLight": {
+    "message": "淺色"
+  },
+  "settings.themeDark": {
+    "message": "深色"
+  },
+  "adv.organization": {
+    "message": "OpenAI 組織"
+  },
+  "adv.organizationHelp": {
+    "message": "OpenAI 託管端點的選用標頭。"
+  },
+  "adv.project": {
+    "message": "OpenAI 專案"
+  },
+  "adv.projectHelp": {
+    "message": "OpenAI 託管端點的選用標頭。"
+  },
+  "adv.debugLogging": {
+    "message": "啟用偵錯記錄"
+  },
+  "adv.htmlToMarkdown": {
+    "message": "將 HTML 內文轉為 Markdown"
+  },
+  "adv.stripUrlParams": {
+    "message": "移除 URL 追蹤參數"
+  },
+  "adv.altTextImages": {
+    "message": "以替代文字取代圖片"
+  },
+  "adv.collapseWhitespace": {
+    "message": "合併連續空白"
+  },
+  "adv.tokenReduction": {
+    "message": "積極縮減 token"
+  },
+  "adv.showDebugTab": {
+    "message": "顯示偵錯資訊"
+  },
+  "adv.inputCharLimit": {
+    "message": "輸入字元上限"
+  },
+  "adv.inputCharLimitHelp": {
+    "message": "僅在啟用積極縮減時生效。字元數不等於 token 數，請為提示詞在模型內容長度上限中預留空間。"
+  },
+  "adv.inputCharLimitEstimate": {
+    "message": "拉丁文字約 $LATIN$ 個 token，中文約 $HAN$ 個 token。"
+  },
+  "adv.inputCharLimitEstimateHint": {
+    "message": "中文約每個字 1 個 token，拉丁文字約每 4 個字元 1 個 token。"
+  },
+  "adv.maxTokens": {
+    "message": "最大輸出 token 數"
+  },
+  "adv.temperature": {
+    "message": "溫度"
+  },
+  "adv.topP": {
+    "message": "Top P"
+  },
+  "adv.seed": {
+    "message": "隨機種子"
+  },
+  "adv.repetitionPenalty": {
+    "message": "重複懲罰"
+  },
+  "adv.topK": {
+    "message": "Top K"
+  },
+  "adv.minP": {
+    "message": "Min P"
+  },
+  "adv.presencePenalty": {
+    "message": "存在懲罰"
+  },
+  "adv.frequencyPenalty": {
+    "message": "頻率懲罰"
+  },
+  "adv.typicalP": {
+    "message": "Typical P"
+  },
+  "adv.tfs": {
+    "message": "TFS"
+  },
+  "rules.heading": {
+    "message": "分類規則"
+  },
+  "rules.criterion": {
+    "message": "分類標準"
+  },
+  "rules.criterionPlaceholder": {
+    "message": "例如：這封郵件是否需要我儘快回覆？"
+  },
+  "rules.disabled": {
+    "message": "（已停用）"
+  },
+  "rules.accounts": {
+    "message": "帳戶"
+  },
+  "rules.folders": {
+    "message": "資料夾"
+  },
+  "rules.minDays": {
+    "message": "最短天數"
+  },
+  "rules.maxDays": {
+    "message": "最長天數"
+  },
+  "rules.threshold": {
+    "message": "符合機率閾值（%）—— 留空則使用預設值"
+  },
+  "rules.condStop": {
+    "message": "停止"
+  },
+  "rules.condUnread": {
+    "message": "未讀"
+  },
+  "rules.condAge": {
+    "message": "時效"
+  },
+  "rules.condAccounts": {
+    "message": "帳戶"
+  },
+  "rules.condFolders": {
+    "message": "資料夾"
+  },
+  "rules.stopAfterMatch": {
+    "message": "符合後停止"
+  },
+  "rules.unreadOnly": {
+    "message": "僅套用於未讀郵件"
+  },
+  "actionType.tag": {
+    "message": "標籤"
+  },
+  "actionType.move": {
+    "message": "移動"
+  },
+  "actionType.copy": {
+    "message": "複製"
+  },
+  "actionType.junk": {
+    "message": "垃圾郵件"
+  },
+  "actionType.read": {
+    "message": "已讀"
+  },
+  "actionType.flag": {
+    "message": "旗標"
+  },
+  "actionType.delete": {
+    "message": "刪除"
+  },
+  "actionType.archive": {
+    "message": "封存"
+  },
+  "actionType.forward": {
+    "message": "轉寄"
+  },
+  "actionType.reply": {
+    "message": "回覆"
+  },
+  "param.markJunk": {
+    "message": "標記為垃圾郵件"
+  },
+  "param.markNotJunk": {
+    "message": "標記為非垃圾郵件"
+  },
+  "param.markRead": {
+    "message": "標記為已讀"
+  },
+  "param.markUnread": {
+    "message": "標記為未讀"
+  },
+  "param.flag": {
+    "message": "加上旗標"
+  },
+  "param.unflag": {
+    "message": "取消旗標"
+  },
+  "param.replyAll": {
+    "message": "回覆全部"
+  },
+  "param.replySender": {
+    "message": "僅回覆寄件人"
+  },
+  "maint.heading": {
+    "message": "維護"
+  },
+  "maint.ruleCount": {
+    "message": "規則數"
+  },
+  "maint.cacheEntries": {
+    "message": "快取項目"
+  },
+  "maint.queueItems": {
+    "message": "佇列項目"
+  },
+  "maint.currentTime": {
+    "message": "本次執行耗時"
+  },
+  "maint.lastTime": {
+    "message": "上次執行耗時"
+  },
+  "maint.averageTime": {
+    "message": "平均執行耗時"
+  },
+  "maint.totalTime": {
+    "message": "累計執行耗時"
+  },
+  "maint.perHour": {
+    "message": "每小時處理郵件數"
+  },
+  "maint.perDay": {
+    "message": "每天處理郵件數"
+  },
+  "maint.dataCategories": {
+    "message": "資料類別"
+  },
+  "maint.categorySettings": {
+    "message": "設定"
+  },
+  "maint.categoryRules": {
+    "message": "規則"
+  },
+  "maint.categoryCache": {
+    "message": "快取"
+  },
+  "errors.heading": {
+    "message": "本次工作階段錯誤"
+  },
+  "errors.empty": {
+    "message": "自上次啟動以來沒有記錄到錯誤。"
+  },
+  "errors.logTitle": {
+    "message": "錯誤記錄"
+  },
+  "errors.visibleSession": {
+    "message": "僅在本次工作階段中可見。"
+  },
+  "errors.unknown": {
+    "message": "未知錯誤"
+  },
+  "errors.generic": {
+    "message": "錯誤"
+  },
+  "debug.promptDiff": {
+    "message": "提示詞差異"
+  },
+  "debug.tokenReduction": {
+    "message": "提示詞 token 縮減：$PERCENT$%"
+  },
+  "bg.menu.applyRules": {
+    "message": "套用 AI 規則"
+  },
+  "bg.menu.clearCache": {
+    "message": "清除 AI 快取"
+  },
+  "bg.menu.viewReasoning": {
+    "message": "查看分類理由"
+  },
+  "bg.actionDetails": {
+    "message": "詳細資訊"
+  },
+  "bg.notifyTitle": {
+    "message": "Sortana 錯誤"
+  },
+  "bg.notifyApplyFailed": {
+    "message": "套用 AI 規則失敗"
+  },
+  "bg.errorApplyFailed": {
+    "message": "套用 AI 規則失敗"
+  },
+  "bg.errorUnhandledRejection": {
+    "message": "未處理的 Promise 例外"
+  },
+  "details.title": {
+    "message": "AI 分類詳細資訊"
+  },
+  "details.matched": {
+    "message": "已符合"
+  },
+  "details.notMatched": {
+    "message": "未符合"
+  },
+  "details.underThreshold": {
+    "message": "（依目前閾值判定）"
+  },
+  "details.thresholdTooltip": {
+    "message": "閾值：$THRESHOLD$%"
+  },
+  "details.thresholdModelTooltip": {
+    "message": "閾值：$THRESHOLD$% · 模型：$MODEL$"
+  },
+  "error.batchSize": {
+    "message": "每次請求的規則數必須為正整數。"
+  },
+  "error.thresholdRange": {
+    "message": "閾值須介於 0% 到 100% 之間，字元上限須為正整數。"
+  },
+  "error.importFailed": {
+    "message": "匯入失敗：$MESSAGE$"
+  }
+}

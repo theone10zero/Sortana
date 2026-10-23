@@ -14,6 +14,7 @@ const storage = (globalThis.messenger ?? browser).storage;
 
 let logger;
 let AiClassifier;
+let i18n = null;
 let aiRules = [];
 let queue = Promise.resolve();
 let queuedCount = 0;
@@ -38,6 +39,75 @@ let showDebugTab = false;
 const ERROR_NOTIFICATION_ID = 'sortana-error';
 const ERROR_ICON_TIMEOUT = 4500;
 const MAX_ERROR_LOG = 50;
+
+// The UI locale follows Thunderbird's language. Falls back to the message key
+// until modules/i18n.js has been imported.
+function t(key, subs = null) {
+    if (i18n) return i18n.t(key, subs);
+    let message = '';
+    try {
+        message = browser.i18n.getMessage(key) || '';
+    } catch (e) {
+        message = '';
+    }
+    if (!message) return key;
+    if (!subs) return message;
+    return message.replace(/\$([A-Za-z_][A-Za-z0-9_]*)\$/g, (match, name) => {
+        const value = subs[name];
+        return value === undefined || value === null ? match : String(value);
+    });
+}
+
+// Thunderbird's numeric message id is an internal tracker id. It is dropped
+// from the tracker as soon as the message is moved to another folder or
+// deleted, and any later `messages.update()` on it fails with
+// "Message not found". A move therefore hands the message a new id.
+const MESSAGE_GONE_PATTERN = /message not found/i;
+
+// Actions that only change message properties need a live message id, so they
+// run before the actions that invalidate it. The order inside a group is the
+// order the user configured.
+const ACTION_STAGE = {
+    tag: 0, junk: 0, read: 0, flag: 0, forward: 0, reply: 0,
+    copy: 1,
+    move: 2, archive: 2,
+    delete: 3
+};
+
+function orderedActions(actions) {
+    return (Array.isArray(actions) ? actions : [])
+        .map((action, index) => ({ action, index }))
+        .sort((a, b) => (ACTION_STAGE[a.action.type] ?? 0) - (ACTION_STAGE[b.action.type] ?? 0) || a.index - b.index)
+        .map(entry => entry.action);
+}
+
+function isMessageGone(error) {
+    return MESSAGE_GONE_PATTERN.test(String(error?.message || ''));
+}
+
+// A moved message keeps its RFC 5322 Message-ID header but is given a new
+// tracker id, so the new id is found by looking that header up in the
+// destination folder.
+async function findMessageId(criteria) {
+    try {
+        const list = await messenger.messages.query(criteria);
+        const found = list?.messages || [];
+        return found.length ? found[0].id : null;
+    } catch (e) {
+        logger?.aiLog('failed to re-resolve a moved message', { level: 'warn' }, e);
+        return null;
+    }
+}
+
+async function findArchiveFolderId(accountId) {
+    if (!accountId) return null;
+    try {
+        const list = await messenger.folders.query({ accountId, specialUse: ['archives'] });
+        return list?.folders?.[0]?.id ?? null;
+    } catch (e) {
+        return null;
+    }
+}
 
 function normalizeRules(rules) {
     return Array.isArray(rules) ? rules.map(r => {
@@ -162,27 +232,100 @@ function byteSize(str) {
     return new TextEncoder().encode(str || "").length;
 }
 
+// A URL ends at whitespace, ASCII closing punctuation, or any CJK character.
+// Chinese text has no inter-word spaces, so a naive `[^\s)]+` match swallows
+// every following character up to the next space and silently deletes the
+// rest of the sentence.
+const URL_PATTERN = /https?:\/\/[^\s"'<>()\[\]{}　-〿぀-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]+/g;
+
+function stripUrlQueryParams(match) {
+    const cleaned = match.replace(/[.,;:!?'")\]}]+$/, '');
+    const idx = cleaned.indexOf('?');
+    return idx >= 0 ? cleaned.slice(0, idx) : cleaned;
+}
+
+const MIME_WORD = /=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g;
+
+// RFC 2047 encoded words, e.g. `=?UTF-8?B?5Y+R56Wo?=`. Mail clients encode
+// non-ASCII header values this way, so the raw value is unreadable without
+// decoding. Applied defensively: values that are already plain text are
+// returned unchanged.
+function decodeMimeWords(value) {
+    if (typeof value !== 'string' || !value.includes('=?')) return value;
+    // Whitespace between two adjacent encoded words is not part of the text.
+    const collapsed = value.replace(/(\?=)[ \t]+(=\?)/g, '$1$2');
+    return collapsed.replace(MIME_WORD, (match, charset, encoding, data) => {
+        try {
+            let bytes;
+            if (encoding.toUpperCase() === 'B') {
+                const binary = atob(data);
+                bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i += 1) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+            } else {
+                const raw = new Uint8Array(data.length);
+                let length = 0;
+                for (let i = 0; i < data.length; i += 1) {
+                    if (data[i] === '_') {
+                        raw[length++] = 0x20;
+                    } else if (data[i] === '=' && /^[0-9A-Fa-f]{2}$/.test(data.slice(i + 1, i + 3))) {
+                        raw[length++] = parseInt(data.slice(i + 1, i + 3), 16);
+                        i += 2;
+                    } else {
+                        raw[length++] = data.charCodeAt(i) & 0xFF;
+                    }
+                }
+                bytes = raw.subarray(0, length);
+            }
+            return new TextDecoder(charset).decode(bytes);
+        } catch (e) {
+            return match;
+        }
+    });
+}
+
+// Attachment file names. Clients that send non-ASCII names use the RFC 5987
+// `filename*=UTF-8''percent-encoded` form, which the plain `filename=` pattern
+// does not match at all.
+function decodeFilename(headerValue) {
+    if (!headerValue) return '';
+    const extended = /filename\*\s*=\s*([^;]+)/i.exec(headerValue);
+    if (extended) {
+        const raw = extended[1].trim().replace(/^"|"$/g, '');
+        const parts = raw.split("'");
+        const encoded = parts.length >= 3 ? parts.slice(2).join("'") : raw;
+        try {
+            return decodeMimeWords(decodeURIComponent(encoded));
+        } catch (e) {
+            return encoded;
+        }
+    }
+    const plain = /filename\s*=\s*"?([^";]+)/i.exec(headerValue);
+    if (plain) return decodeMimeWords(plain[1]);
+    const named = /name\s*=\s*"?([^";]+)/i.exec(headerValue);
+    if (named) return decodeMimeWords(named[1]);
+    return '';
+}
+
 function replaceInlineBase64(text) {
     return text.replace(/(?:data:[^;]+;base64,)?[A-Za-z0-9+/=\r\n]{100,}/g,
         m => tokenReduction ? '__BASE64__' : `[base64: ${byteSize(m)} bytes]`);
 }
 
 function sanitizeString(text) {
-    let t = String(text);
+    let sanitized = String(text);
     if (tokenReduction) {
-        t = t.replace(/<!--.*?-->/gs, '')
+        sanitized = sanitized.replace(/<!--.*?-->/gs, '')
             .replace(/url\([^\)]*\)/gi, 'url(__IMG__)');
     }
     if (stripUrlParams) {
-        t = t.replace(/https?:\/\/[^\s)]+/g, m => {
-            const idx = m.indexOf('?');
-            return idx >= 0 ? m.slice(0, idx) : m;
-        });
+        sanitized = sanitized.replace(URL_PATTERN, stripUrlQueryParams);
     }
     if (collapseWhitespace) {
-        t = t.replace(/[\u200B-\u200D\u2060\s]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n');
+        sanitized = sanitized.replace(/[\u200B-\u200D\u2060\s]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n');
     }
-    return t;
+    return sanitized;
 }
 
 function collectText(part, bodyParts, attachments) {
@@ -194,8 +337,7 @@ function collectText(part, bodyParts, attachments) {
     const cd = (part.headers?.["content-disposition"]?.[0] || "").toLowerCase();
     const body = String(part.body || "");
     if (cd.includes("attachment") || !ct.startsWith("text/")) {
-        const nameMatch = /filename\s*=\s*"?([^";]+)/i.exec(cd) || /name\s*=\s*"?([^";]+)/i.exec(part.headers?.["content-type"]?.[0] || "");
-        const name = nameMatch ? nameMatch[1] : "";
+        const name = decodeFilename(cd) || decodeFilename(part.headers?.["content-type"]?.[0] || "");
         attachments.push(`${name} (${ct}, ${part.size || byteSize(body)} bytes)`);
     } else if (ct.startsWith("text/html")) {
         const doc = new DOMParser().parseFromString(body, 'text/html');
@@ -254,8 +396,7 @@ function collectRawText(part, bodyParts, attachments) {
     const cd = (part.headers?.["content-disposition"]?.[0] || "").toLowerCase();
     const body = String(part.body || "");
     if (cd.includes("attachment") || !ct.startsWith("text/")) {
-        const nameMatch = /filename\s*=\s*"?([^";]+)/i.exec(cd) || /name\s*=\s*"?([^";]+)/i.exec(part.headers?.["content-type"]?.[0] || "");
-        const name = nameMatch ? nameMatch[1] : "";
+        const name = decodeFilename(cd) || decodeFilename(part.headers?.["content-type"]?.[0] || "");
         attachments.push(`${name} (${ct}, ${part.size || byteSize(body)} bytes)`);
     } else if (ct.startsWith("text/html")) {
         const doc = new DOMParser().parseFromString(body, 'text/html');
@@ -271,7 +412,7 @@ function buildEmailText(full, applyTransforms = true) {
     const collect = applyTransforms ? collectText : collectRawText;
     collect(full, bodyParts, attachments);
     const headers = Object.entries(full.headers || {})
-        .map(([k, v]) => `${k}: ${v.join(' ')}`)
+        .map(([k, v]) => `${k}: ${decodeMimeWords(v.join(' '))}`)
         .join('\n');
     const attachInfo = `Attachments: ${attachments.length}` +
         (attachments.length ? "\n" + attachments.map(a => ` - ${a}`).join('\n') : "");
@@ -288,10 +429,10 @@ function buildEmailText(full, applyTransforms = true) {
 }
 
 function updateTimingStats(elapsed) {
-    const t = timingStats;
-    t.count += 1;
-    t.total += elapsed;
-    t.last = elapsed;
+    const stats = timingStats;
+    stats.count += 1;
+    stats.total += elapsed;
+    stats.last = elapsed;
     const delta = elapsed - t.mean;
     t.mean += delta / t.count;
     t.m2 += delta * (elapsed - t.mean);
@@ -335,11 +476,20 @@ async function processMessage(id) {
         let currentTags = [];
         let alreadyRead = false;
         let identityId = null;
+        let accountId = null;
+        // The id Thunderbird tracks the message under. It is replaced when the
+        // message is moved, so actions follow it instead of the original id.
+        let currentId = id;
+        // The RFC 5322 Message-ID header survives a move and is used to find
+        // the message again in its new folder.
+        let headerMessageId = null;
         try {
             hdr = await messenger.messages.get(id);
             currentTags = Array.isArray(hdr.tags) ? [...hdr.tags] : [];
             alreadyRead = hdr.read === true;
-            const ids = await messenger.identities.list(hdr.folder.accountId);
+            accountId = hdr.folder.accountId;
+            headerMessageId = typeof hdr.headerMessageId === 'string' ? hdr.headerMessageId : null;
+            const ids = await messenger.identities.list(accountId);
             identityId = ids[0]?.id || null;
         } catch (e) {
             currentTags = [];
@@ -380,30 +530,55 @@ async function processMessage(id) {
         }
         for await (const { rule, result: { matched } } of AiClassifier.classifyRules(text, candidates, snapshot)) {
             if (matched) {
-                for (const act of (rule.actions || [])) {
-                    if (act.type === 'tag' && act.tagKey) {
-                        if (!currentTags.includes(act.tagKey)) {
-                            currentTags.push(act.tagKey);
-                            await messenger.messages.update(id, { tags: currentTags });
+                for (const act of orderedActions(rule.actions)) {
+                    // The message is gone (deleted, or moved somewhere we could
+                    // not follow), so there is nothing left to act on.
+                    if (currentId === null) break;
+                    try {
+                        if (act.type === 'tag' && act.tagKey) {
+                            if (!currentTags.includes(act.tagKey)) {
+                                currentTags.push(act.tagKey);
+                                await messenger.messages.update(currentId, { tags: currentTags });
+                            }
+                        } else if (act.type === 'move' && act.folder) {
+                            await messenger.messages.move([currentId], act.folder);
+                            // The move invalidated the id, so look the message
+                            // up in its new folder by its Message-ID header.
+                            currentId = headerMessageId
+                                ? await findMessageId({ folder: act.folder, headerMessageId })
+                                : null;
+                        } else if (act.type === 'copy' && act.copyTarget) {
+                            await messenger.messages.copy([currentId], act.copyTarget);
+                        } else if (act.type === 'junk') {
+                            await messenger.messages.update(currentId, { junk: !!act.junk });
+                        } else if (act.type === 'read') {
+                            await messenger.messages.update(currentId, { read: !!act.read });
+                        } else if (act.type === 'flag') {
+                            await messenger.messages.update(currentId, { flagged: !!act.flagged });
+                        } else if (act.type === 'delete') {
+                            await messenger.messages.delete([currentId]);
+                            currentId = null;
+                        } else if (act.type === 'archive') {
+                            await messenger.messages.archive([currentId]);
+                            const archiveFolderId = await findArchiveFolderId(accountId);
+                            currentId = headerMessageId
+                                ? await findMessageId({
+                                    ...(archiveFolderId ? { folder: archiveFolderId } : { accountId }),
+                                    headerMessageId
+                                })
+                                : null;
+                        } else if (act.type === 'forward' && act.address && identityId) {
+                            await browser.compose.beginForward(currentId, { to: [act.address], identityId });
+                        } else if (act.type === 'reply' && act.replyType && identityId) {
+                            await browser.compose.beginReply(currentId, { replyType: act.replyType, identityId });
                         }
-                    } else if (act.type === 'move' && act.folder) {
-                        await messenger.messages.move([id], act.folder);
-                    } else if (act.type === 'copy' && act.copyTarget) {
-                        await messenger.messages.copy([id], act.copyTarget);
-                    } else if (act.type === 'junk') {
-                        await messenger.messages.update(id, { junk: !!act.junk });
-                    } else if (act.type === 'read') {
-                        await messenger.messages.update(id, { read: !!act.read });
-                    } else if (act.type === 'flag') {
-                        await messenger.messages.update(id, { flagged: !!act.flagged });
-                    } else if (act.type === 'delete') {
-                        await messenger.messages.delete([id]);
-                    } else if (act.type === 'archive') {
-                        await messenger.messages.archive([id]);
-                    } else if (act.type === 'forward' && act.address && identityId) {
-                        await browser.compose.beginForward(id, { to: [act.address], identityId });
-                    } else if (act.type === 'reply' && act.replyType && identityId) {
-                        await browser.compose.beginReply(id, { replyType: act.replyType, identityId });
+                    } catch (e) {
+                        if (!isMessageGone(e)) throw e;
+                        // The message was removed by something else (another
+                        // filter, an expunge, a compacted folder). Stop acting
+                        // on it instead of failing the whole email.
+                        logger?.aiLog('message is no longer available, skipping its remaining actions', { debug: true }, e);
+                        currentId = null;
                     }
                 }
                 if (rule.stopProcessing) {
@@ -424,12 +599,12 @@ async function processMessage(id) {
         updateTimingStats(elapsed);
         await storage.local.set({ classifyStats: timingStats });
         logger.aiLog("failed to apply AI rules", { level: 'error' }, e);
-        recordError("Failed to apply AI rules", e);
+        recordError(t('bg.errorApplyFailed'), e);
         browser.notifications.create(ERROR_NOTIFICATION_ID, {
             type: 'basic',
             iconUrl: browser.runtime.getURL('resources/img/logo.png'),
-            title: 'Sortana Error',
-            message: 'Failed to apply AI rules'
+            title: t('bg.notifyTitle'),
+            message: t('bg.notifyApplyFailed')
         });
     }
 }
@@ -467,6 +642,7 @@ async function clearCacheForMessages(idsInput) {
 
 (async () => {
     logger = await import(browser.runtime.getURL("logger.js"));
+    i18n = await import(browser.runtime.getURL('modules/i18n.js'));
     ({ detectSystemTheme } = await import(browser.runtime.getURL('modules/themeUtils.js')));
     try {
         AiClassifier = await import(browser.runtime.getURL("modules/AiClassifier.js"));
@@ -479,7 +655,7 @@ async function clearCacheForMessages(idsInput) {
     }
 
     try {
-        const store = await storage.local.get(["systemOneProcessAll", "systemOneBatchSize", "apiType", "decisionThreshold", "inputCharacterLimit", "endpoint", "model", "apiKey", "openaiOrganization", "openaiProject", "customSystemPrompt", "aiParams", "debugLogging", "htmlToMarkdown", "stripUrlParams", "altTextImages", "collapseWhitespace", "tokenReduction", "aiRules", "theme", "showDebugTab"]);
+        const store = await storage.local.get(["systemOneProcessAll", "systemOneBatchSize", "apiType", "decisionThreshold", "inputCharacterLimit", "endpoint", "model", "apiKey", "openaiOrganization", "openaiProject", "customSystemPrompt", "promptLanguage", "aiParams", "debugLogging", "htmlToMarkdown", "stripUrlParams", "altTextImages", "collapseWhitespace", "tokenReduction", "aiRules", "theme", "showDebugTab"]);
         logger.setDebug(store.debugLogging);
         const { migratedInputLimit } = await import(browser.runtime.getURL('modules/classificationConfig.js'));
         if (store.inputCharacterLimit === undefined) {
@@ -564,46 +740,46 @@ async function clearCacheForMessages(idsInput) {
     logger.aiLog("background.js loaded – ready to classify", { debug: true });
     updateActionIcon();
     if (browser.messageDisplayAction) {
-        browser.messageDisplayAction.setTitle({ title: "Details" });
+        browser.messageDisplayAction.setTitle({ title: t('bg.actionDetails') });
         if (browser.messageDisplayAction.setLabel) {
-            browser.messageDisplayAction.setLabel({ label: "Details" });
+            browser.messageDisplayAction.setLabel({ label: t('bg.actionDetails') });
         }
 
     }
 
     browser.menus.create({
         id: "apply-ai-rules-list",
-        title: "Apply AI Rules",
+        title: t('bg.menu.applyRules'),
         contexts: ["message_list"],
         icons: iconPaths('eye')
     });
     browser.menus.create({
         id: "apply-ai-rules-display",
-        title: "Apply AI Rules",
+        title: t('bg.menu.applyRules'),
         contexts: ["message_display_action"],
         icons: iconPaths('eye')
     });
     browser.menus.create({
         id: "clear-ai-cache-list",
-        title: "Clear AI Cache",
+        title: t('bg.menu.clearCache'),
         contexts: ["message_list"],
         icons: iconPaths('trash')
     });
     browser.menus.create({
         id: "clear-ai-cache-display",
-        title: "Clear AI Cache",
+        title: t('bg.menu.clearCache'),
         contexts: ["message_display_action"],
         icons: iconPaths('trash')
     });
     browser.menus.create({
         id: "view-ai-reason-list",
-        title: "View Reasoning",
+        title: t('bg.menu.viewReasoning'),
         contexts: ["message_list"],
         icons: iconPaths('clipboarddata')
     });
     browser.menus.create({
         id: "view-ai-reason-display",
-        title: "View Reasoning",
+        title: t('bg.menu.viewReasoning'),
         contexts: ["message_display_action"],
         icons: iconPaths('clipboarddata')
     });
@@ -744,15 +920,15 @@ async function clearCacheForMessages(idsInput) {
             recordError(msg.context || "Sortana Error", { message: msg.message, detail: msg.detail });
             return { ok: true };
         } else if (msg?.type === "sortana:getTiming") {
-            const t = timingStats;
-            const std = t.count > 1 ? Math.sqrt(t.m2 / (t.count - 1)) : 0;
+            const stats = timingStats;
+            const std = stats.count > 1 ? Math.sqrt(stats.m2 / (stats.count - 1)) : 0;
             return {
                 count: queuedCount + (processing ? 1 : 0),
                 current: currentStart ? Date.now() - currentStart : -1,
-                last: t.last,
-                runs: t.count,
-                average: t.mean,
-                total: t.total,
+                last: stats.last,
+                runs: stats.count,
+                average: stats.mean,
+                total: stats.total,
                 stddev: std
             };
         } else {
@@ -774,7 +950,7 @@ async function clearCacheForMessages(idsInput) {
     // Catch any unhandled rejections
     window.addEventListener("unhandledrejection", ev => {
         logger.aiLog("Unhandled promise rejection", { level: 'error' }, ev.reason);
-        recordError("Unhandled promise rejection", ev.reason);
+        recordError(t('bg.errorUnhandledRejection'), ev.reason);
     });
 
     browser.notifications.onClicked.addListener(id => {

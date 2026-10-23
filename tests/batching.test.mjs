@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import { CONFIG_DEFAULTS, validateSettings } from '../modules/classificationConfig.js';
 import * as systemone from '../modules/backends/systemOne.js';
+import { loadMessages, translatorFor } from './support/i18n.js';
 
 const data = {};
 let cacheWrites = 0;
@@ -141,6 +142,8 @@ test('batch settings validate and survive import', async () => {
 
 // Exercise the action runner with the real lazy classifier and mocked mail APIs.
 const source = await readFile(new URL('../background.js', import.meta.url), 'utf8');
+// The message-id helpers live at module level; processMessage depends on them.
+const helpers = source.slice(source.indexOf('const MESSAGE_GONE_PATTERN'), source.indexOf('function normalizeRules'));
 const functions = source.slice(source.indexOf('async function processMessage('), source.indexOf('async function clearCacheForMessages('));
 test('stop after match skips later actions and batches; all-mode retains later evidence', async () => {
   for (const processAll of [true, false]) {
@@ -149,6 +152,7 @@ test('stop after match skips later actions and batches; all-mode retains later e
     const rules = Array.from({ length: 5 }, (_, i) => ({ criterion: `rule ${i}`, actions: [{ type: 'flag', flagged: true }], stopProcessing: i === 1 }));
     const context = vm.createContext({
       structuredClone, Date, Error, aiRules: rules, AiClassifier: classifier,
+      t: translatorFor(await loadMessages()),
       queue: Promise.resolve(), queuedCount: 0, processing: false, currentStart: 0,
       tokenReduction: false, showDebugTab: false, timingStats: {},
       updateActionIcon() {}, updateTimingStats() {}, showTransientIcon() {},
@@ -156,12 +160,13 @@ test('stop after match skips later actions and batches; all-mode retains later e
       logger: { aiLog() {} }, recordError(...args) { errors.push(args); }, ERROR_NOTIFICATION_ID: 'error',
       storage: messenger.storage,
       messenger: { messages: {
-        async getFull() { return {}; }, async get() { return { tags: [], folder: { accountId: 'account' } }; },
-        async update(id, value) { actions.push({ id, value }); }
-      }, identities: { async list() { return []; } } },
+        async getFull() { return {}; }, async get() { return { tags: [], folder: { accountId: 'account' }, headerMessageId: 'message-1@example.com' }; },
+        async update(id, value) { actions.push({ id, value }); },
+        async query() { return { messages: [] }; }
+      }, identities: { async list() { return []; } }, folders: { async query() { return { folders: [] }; } } },
       browser: { runtime: { getURL: x => x }, notifications: { async create() {} } }
     });
-    vm.runInContext(functions, context);
+    vm.runInContext(`${helpers}\n${functions}`, context);
     await vm.runInContext('applyAiRules([1])', context);
     assert.equal(errors.length, 0);
     assert.equal(actions.length, 2);
@@ -185,6 +190,7 @@ test('batch controls default to all and retain numeric input across toggles and 
   };
   const context = vm.createContext({
     defaults: { apiType: 'systemone' }, DEFAULT_AI_PARAMS: {}, migratedInputLimit() { return 3686; },
+    t: translatorFor(await loadMessages()),
     updateEndpointPreview() {}, document: { getElementById: field, querySelectorAll() { return []; } }
   });
   vm.runInContext(`${section}\nupdateApiControls();`, context);

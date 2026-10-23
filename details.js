@@ -1,6 +1,9 @@
 const aiLog = (await import(browser.runtime.getURL("logger.js"))).aiLog;
 const storage = (globalThis.messenger ?? browser).storage;
 const { detectSystemTheme } = await import(browser.runtime.getURL('modules/themeUtils.js'));
+const { t, applyToDocument, currentLocale } = await import(browser.runtime.getURL('modules/i18n.js'));
+document.documentElement.lang = currentLocale();
+applyToDocument(document);
 const { theme } = await storage.local.get('theme');
 const mode = (theme || 'auto') === 'auto'
   ? await detectSystemTheme()
@@ -57,9 +60,9 @@ async function loadMessage(id) {
       const body = document.createElement('div');
       body.className = 'message-body';
       const status = document.createElement('p');
-      status.textContent = r.matched ? 'Matched' : 'Did not match';
+      status.textContent = r.matched ? t('details.matched') : t('details.notMatched');
       if (r.backend === 'systemone') {
-        status.textContent += ' under current threshold';
+        status.textContent += ' ' + t('details.underThreshold');
         status.classList.add('mb-2');
         body.appendChild(status);
         const percentage = r.probability * 100;
@@ -70,7 +73,9 @@ async function loadMessage(id) {
         bar.setAttribute('aria-valuemin', '0');
         bar.setAttribute('aria-valuemax', '100');
         bar.setAttribute('aria-valuenow', String(percentage));
-        bar.title = `Threshold: ${r.threshold * 100}%${r.model ? ` · Model: ${r.model}` : ''}`;
+        bar.title = r.model
+          ? t('details.thresholdModelTooltip', { THRESHOLD: r.threshold * 100, MODEL: r.model })
+          : t('details.thresholdTooltip', { THRESHOLD: r.threshold * 100 });
         const fill = document.createElement('div');
         fill.className = 'probability-fill';
         fill.style.width = `${percentage}%`;

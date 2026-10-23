@@ -12,6 +12,7 @@ const KEY_GROUPS = {
         'openaiOrganization',
         'openaiProject',
         'customSystemPrompt',
+        'promptLanguage',
         'aiParams',
         'debugLogging',
         'htmlToMarkdown',

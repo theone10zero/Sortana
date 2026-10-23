@@ -1,0 +1,461 @@
+{
+  "param.address": {
+    "message": "收件地址"
+  },
+  "app.logoAlt": {
+    "message": "Sortana 标志"
+  },
+  "app.optionsTitle": {
+    "message": "AI 过滤器选项"
+  },
+  "tab.settings": {
+    "message": "设置"
+  },
+  "tab.rules": {
+    "message": "规则"
+  },
+  "tab.maintenance": {
+    "message": "维护"
+  },
+  "tab.errors": {
+    "message": "错误"
+  },
+  "tab.debug": {
+    "message": "调试"
+  },
+  "action.save": {
+    "message": "保存"
+  },
+  "action.reset": {
+    "message": "恢复默认"
+  },
+  "action.advanced": {
+    "message": "高级选项"
+  },
+  "action.addRule": {
+    "message": "添加规则"
+  },
+  "action.addAction": {
+    "message": "添加动作"
+  },
+  "action.remove": {
+    "message": "移除"
+  },
+  "action.show": {
+    "message": "显示"
+  },
+  "action.hide": {
+    "message": "隐藏"
+  },
+  "action.refresh": {
+    "message": "刷新"
+  },
+  "action.clearCache": {
+    "message": "清除缓存"
+  },
+  "action.resetTiming": {
+    "message": "重置耗时统计"
+  },
+  "action.export": {
+    "message": "导出数据"
+  },
+  "action.import": {
+    "message": "导入数据"
+  },
+  "settings.heading": {
+    "message": "设置"
+  },
+  "settings.apiType": {
+    "message": "API 类型"
+  },
+  "settings.processAll": {
+    "message": "全部处理"
+  },
+  "settings.processAllHelp": {
+    "message": "将每封邮件中所有符合条件的未缓存规则合并为一次请求。动作仍按规则顺序执行，并遵循“匹配后停止”。"
+  },
+  "settings.batchSize": {
+    "message": "每次请求的规则数"
+  },
+  "settings.batchSizeHelp": {
+    "message": "关闭“全部处理”即可限制每次请求的规则数量。设为 1 表示每次只处理一条规则。"
+  },
+  "settings.threshold": {
+    "message": "默认匹配概率阈值（%）"
+  },
+  "settings.thresholdHelp": {
+    "message": "当概率不低于该值时判定为匹配。规则可单独覆盖该值。建议用你自己的邮件样本评估阈值。"
+  },
+  "settings.endpoint": {
+    "message": "接口地址"
+  },
+  "settings.endpointResolved": {
+    "message": "实际请求地址：$URL$"
+  },
+  "settings.endpointInvalid": {
+    "message": "实际请求地址：（无效）"
+  },
+  "settings.apiToken": {
+    "message": "API 令牌"
+  },
+  "settings.apiTokenHelp": {
+    "message": "按 OpenAI 兼容接口的约定,以 Authorization: Bearer 请求头发送。无需认证的接口可留空。"
+  },
+  "settings.model": {
+    "message": "模型"
+  },
+  "settings.modelNone": {
+    "message": "无（不发送 model 字段）"
+  },
+  "settings.modelStored": {
+    "message": "已保存：$MODEL$"
+  },
+  "settings.modelInvalid": {
+    "message": "请先设置有效的接口地址以加载模型。"
+  },
+  "settings.modelLoading": {
+    "message": "正在加载模型……"
+  },
+  "settings.modelLoaded": {
+    "message": "已加载 $COUNT$ 个模型。"
+  },
+  "settings.modelEmpty": {
+    "message": "未返回任何模型。"
+  },
+  "settings.modelCors": {
+    "message": "加载模型失败。服务器有响应，但 Thunderbird 可能阻止了对响应的访问。请检查 AI 服务器的 CORS 设置，并确认附加组件可以访问该地址。"
+  },
+  "settings.modelFailed": {
+    "message": "加载模型失败。请检查接口地址、HTTP 状态码和网络连接。"
+  },
+  "settings.systemInstructions": {
+    "message": "系统提示词"
+  },
+  "settings.systemInstructionsPlaceholder": {
+    "message": "请输入系统提示词……"
+  },
+  "settings.promptLanguage": {
+    "message": "提示词语言"
+  },
+  "settings.promptLanguageHelp": {
+    "message": "用于生成分类提示词与匹配理由的语言。“自动”会跟随分类标准所使用的语言。"
+  },
+  "settings.promptLanguageAuto": {
+    "message": "自动（跟随分类标准）"
+  },
+  "settings.promptLanguageZh": {
+    "message": "中文"
+  },
+  "settings.promptLanguageEn": {
+    "message": "英文"
+  },
+  "settings.theme": {
+    "message": "主题"
+  },
+  "settings.themeAuto": {
+    "message": "跟随 Thunderbird"
+  },
+  "settings.themeLight": {
+    "message": "浅色"
+  },
+  "settings.themeDark": {
+    "message": "深色"
+  },
+  "adv.organization": {
+    "message": "OpenAI 组织"
+  },
+  "adv.organizationHelp": {
+    "message": "OpenAI 托管接口的可选请求头。"
+  },
+  "adv.project": {
+    "message": "OpenAI 项目"
+  },
+  "adv.projectHelp": {
+    "message": "OpenAI 托管接口的可选请求头。"
+  },
+  "adv.debugLogging": {
+    "message": "启用调试日志"
+  },
+  "adv.htmlToMarkdown": {
+    "message": "将 HTML 正文转为 Markdown"
+  },
+  "adv.stripUrlParams": {
+    "message": "移除 URL 跟踪参数"
+  },
+  "adv.altTextImages": {
+    "message": "用替代文本替换图片"
+  },
+  "adv.collapseWhitespace": {
+    "message": "合并连续空白"
+  },
+  "adv.tokenReduction": {
+    "message": "激进压缩 token"
+  },
+  "adv.showDebugTab": {
+    "message": "显示调试信息"
+  },
+  "adv.inputCharLimit": {
+    "message": "输入字符上限"
+  },
+  "adv.inputCharLimitHelp": {
+    "message": "仅在启用激进压缩时生效。字符数不等于 token 数，请为提示词在模型上下文中留出空间。"
+  },
+  "adv.inputCharLimitEstimate": {
+    "message": "拉丁文字约 $LATIN$ 个 token，中文约 $HAN$ 个 token。"
+  },
+  "adv.inputCharLimitEstimateHint": {
+    "message": "中文约每个字 1 个 token，拉丁文字约每 4 个字符 1 个 token。"
+  },
+  "adv.maxTokens": {
+    "message": "最大输出 token 数"
+  },
+  "adv.temperature": {
+    "message": "温度"
+  },
+  "adv.topP": {
+    "message": "Top P"
+  },
+  "adv.seed": {
+    "message": "随机种子"
+  },
+  "adv.repetitionPenalty": {
+    "message": "重复惩罚"
+  },
+  "adv.topK": {
+    "message": "Top K"
+  },
+  "adv.minP": {
+    "message": "Min P"
+  },
+  "adv.presencePenalty": {
+    "message": "存在惩罚"
+  },
+  "adv.frequencyPenalty": {
+    "message": "频率惩罚"
+  },
+  "adv.typicalP": {
+    "message": "Typical P"
+  },
+  "adv.tfs": {
+    "message": "TFS"
+  },
+  "rules.heading": {
+    "message": "分类规则"
+  },
+  "rules.criterion": {
+    "message": "分类标准"
+  },
+  "rules.criterionPlaceholder": {
+    "message": "例如：这封邮件是否需要我尽快回复？"
+  },
+  "rules.disabled": {
+    "message": "（已禁用）"
+  },
+  "rules.accounts": {
+    "message": "账户"
+  },
+  "rules.folders": {
+    "message": "文件夹"
+  },
+  "rules.minDays": {
+    "message": "最早天数"
+  },
+  "rules.maxDays": {
+    "message": "最晚天数"
+  },
+  "rules.threshold": {
+    "message": "匹配概率阈值（%）—— 留空则使用默认值"
+  },
+  "rules.condStop": {
+    "message": "停止"
+  },
+  "rules.condUnread": {
+    "message": "未读"
+  },
+  "rules.condAge": {
+    "message": "时效"
+  },
+  "rules.condAccounts": {
+    "message": "账户"
+  },
+  "rules.condFolders": {
+    "message": "文件夹"
+  },
+  "rules.stopAfterMatch": {
+    "message": "匹配后停止"
+  },
+  "rules.unreadOnly": {
+    "message": "仅应用于未读邮件"
+  },
+  "actionType.tag": {
+    "message": "标签"
+  },
+  "actionType.move": {
+    "message": "移动"
+  },
+  "actionType.copy": {
+    "message": "复制"
+  },
+  "actionType.junk": {
+    "message": "垃圾邮件"
+  },
+  "actionType.read": {
+    "message": "已读"
+  },
+  "actionType.flag": {
+    "message": "星标"
+  },
+  "actionType.delete": {
+    "message": "删除"
+  },
+  "actionType.archive": {
+    "message": "归档"
+  },
+  "actionType.forward": {
+    "message": "转发"
+  },
+  "actionType.reply": {
+    "message": "回复"
+  },
+  "param.markJunk": {
+    "message": "标记为垃圾邮件"
+  },
+  "param.markNotJunk": {
+    "message": "标记为非垃圾邮件"
+  },
+  "param.markRead": {
+    "message": "标记为已读"
+  },
+  "param.markUnread": {
+    "message": "标记为未读"
+  },
+  "param.flag": {
+    "message": "加星标"
+  },
+  "param.unflag": {
+    "message": "取消星标"
+  },
+  "param.replyAll": {
+    "message": "回复全部"
+  },
+  "param.replySender": {
+    "message": "仅回复发件人"
+  },
+  "maint.heading": {
+    "message": "维护"
+  },
+  "maint.ruleCount": {
+    "message": "规则数"
+  },
+  "maint.cacheEntries": {
+    "message": "缓存条目"
+  },
+  "maint.queueItems": {
+    "message": "队列条目"
+  },
+  "maint.currentTime": {
+    "message": "当前运行耗时"
+  },
+  "maint.lastTime": {
+    "message": "上次运行耗时"
+  },
+  "maint.averageTime": {
+    "message": "平均运行耗时"
+  },
+  "maint.totalTime": {
+    "message": "累计运行耗时"
+  },
+  "maint.perHour": {
+    "message": "每小时处理邮件数"
+  },
+  "maint.perDay": {
+    "message": "每天处理邮件数"
+  },
+  "maint.dataCategories": {
+    "message": "数据类别"
+  },
+  "maint.categorySettings": {
+    "message": "设置"
+  },
+  "maint.categoryRules": {
+    "message": "规则"
+  },
+  "maint.categoryCache": {
+    "message": "缓存"
+  },
+  "errors.heading": {
+    "message": "本次会话错误"
+  },
+  "errors.empty": {
+    "message": "自上次启动以来没有记录到错误。"
+  },
+  "errors.logTitle": {
+    "message": "错误日志"
+  },
+  "errors.visibleSession": {
+    "message": "仅在本次会话中可见。"
+  },
+  "errors.unknown": {
+    "message": "未知错误"
+  },
+  "errors.generic": {
+    "message": "错误"
+  },
+  "debug.promptDiff": {
+    "message": "提示词差异"
+  },
+  "debug.tokenReduction": {
+    "message": "提示词 token 缩减：$PERCENT$%"
+  },
+  "bg.menu.applyRules": {
+    "message": "应用 AI 规则"
+  },
+  "bg.menu.clearCache": {
+    "message": "清除 AI 缓存"
+  },
+  "bg.menu.viewReasoning": {
+    "message": "查看分类理由"
+  },
+  "bg.actionDetails": {
+    "message": "详情"
+  },
+  "bg.notifyTitle": {
+    "message": "Sortana 错误"
+  },
+  "bg.notifyApplyFailed": {
+    "message": "应用 AI 规则失败"
+  },
+  "bg.errorApplyFailed": {
+    "message": "应用 AI 规则失败"
+  },
+  "bg.errorUnhandledRejection": {
+    "message": "未处理的 Promise 异常"
+  },
+  "details.title": {
+    "message": "AI 分类详情"
+  },
+  "details.matched": {
+    "message": "已匹配"
+  },
+  "details.notMatched": {
+    "message": "未匹配"
+  },
+  "details.underThreshold": {
+    "message": "（按当前阈值判定）"
+  },
+  "details.thresholdTooltip": {
+    "message": "阈值：$THRESHOLD$%"
+  },
+  "details.thresholdModelTooltip": {
+    "message": "阈值：$THRESHOLD$% · 模型：$MODEL$"
+  },
+  "error.batchSize": {
+    "message": "每次请求的规则数必须是正整数。"
+  },
+  "error.thresholdRange": {
+    "message": "阈值需在 0% 到 100% 之间，字符上限需为正整数。"
+  },
+  "error.importFailed": {
+    "message": "导入失败：$MESSAGE$"
+  }
+}
