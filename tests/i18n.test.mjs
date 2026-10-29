@@ -6,7 +6,7 @@ import { CONFIG_DEFAULTS, validateSettings } from '../modules/classificationConf
 import { DEFAULT_AI_PARAMS } from '../modules/defaultParams.js';
 import * as chat from '../modules/backends/chatCompletions.js';
 import * as systemone from '../modules/backends/systemOne.js';
-import { resolvePromptLanguage, containsHan } from '../modules/promptLanguage.js';
+import { resolvePromptLanguage, containsHan, templateLanguage } from '../modules/promptLanguage.js';
 import { loadMessages, placeholdersOf } from './support/i18n.js';
 
 const LOCALES = ['en-US', 'zh_CN', 'zh_TW'];
@@ -159,29 +159,89 @@ const chatConfig = {
     aiParams: { ...DEFAULT_AI_PARAMS }
 };
 
-// The exact request the add-on produced before 4.2.0. If this changes, every
-// stored cache entry becomes unreachable.
-const LEGACY_SYSTEM_CONTENT = `You are an email-classification assistant.
-Read the email below and the classification criterion provided by the user.
-Determine whether the email satisfies the user's criterion.
-Return ONLY a JSON object on a single line of the form:
-{"match": true, "reason": "<short explanation>"} - if the email satisfies the criterion
-{"match": false, "reason": "<short explanation>"} - otherwise
+// The exact request the add-on produces for an email summary. If this
+// changes, every stored cache entry becomes unreachable.
+const SUMMARY_SYSTEM_CONTENT = `You are an email-classification assistant.
+Read the email summary below and the classification criteria provided by the user.
+The summary lists the metadata of the message (the lines subject, date, from, to and cc), the file names of the attachments, and three excerpts of the body: the beginning, the middle and the end. The complete body text and the attachment contents are not included, so judge each criterion from the metadata and the excerpts. Content that is missing from an excerpt is not proof that it is missing from the email.
 
-Do not add any other keys, text, or formatting.`;
+Classification Criteria:
+1. Is this a bill?
 
-test('an English criterion still produces the pre-4.2.0 request byte for byte', () => {
+Return ONLY a JSON array on a single line, with 1 element(s) — one for each criterion, each naming the criterion it belongs to with the number given above:
+[{"index": 1, "match": true, "reason": "<reason>"}]
+
+Every criterion must appear exactly once, identified by its number. Do not add any other keys, text, or formatting.`;
+
+test('an English criterion produces the summary request byte for byte', () => {
     const payload = chat.buildRequest('body', 'Is this a bill?', chatConfig);
-    assert.equal(payload.messages[0].content, LEGACY_SYSTEM_CONTENT);
-    assert.equal(payload.messages[1].content, '**Email Contents**\n```\nbody\n```\nClassification Criterion: Is this a bill?');
+    assert.equal(payload.messages[0].content, SUMMARY_SYSTEM_CONTENT);
+    assert.equal(payload.messages[1].content, '**Email Summary**\n```\nbody\n```');
 });
 
-test('an empty custom system prompt matches the stored legacy default', () => {
-    const stored = { ...chatConfig, customSystemPrompt: "Determine whether the email satisfies the user's criterion." };
-    assert.equal(
-        chat.buildRequest('body', 'Is this a bill?', stored).messages[0].content,
-        chat.buildRequest('body', 'Is this a bill?', chatConfig).messages[0].content
-    );
+test('the criteria sit in the system message and the user message carries only the summary', () => {
+    const payload = chat.buildRequest('body', ['Is this a bill?', 'Does it need a reply?'], chatConfig);
+    assert.ok(payload.messages[0].content.includes('Classification Criteria:\n1. Is this a bill?\n2. Does it need a reply?'));
+    assert.equal(payload.messages[1].content, '**Email Summary**\n```\nbody\n```');
+});
+
+test('the answer example uses the numbers of the actual criteria', () => {
+    // A model that copies the example must not copy a number that belongs to
+    // a different criterion, so the example carries the real numbers.
+    const payload = chat.buildRequest('body', ['Only criterion'], chatConfig, [3]);
+    assert.ok(payload.messages[0].content.includes('Classification Criteria:\n3. Only criterion'));
+    assert.ok(payload.messages[0].content.includes('[{"index": 3,'));
+    assert.ok(!payload.messages[0].content.includes('"index": 1'), 'no foreign number in the example');
+    assert.ok(payload.messages[0].content.includes('with 1 element'));
+});
+
+test('the strict prompt demands a conservative verdict', () => {
+    const strict = chat.buildRequest('body', 'Is this a bill?', { ...chatConfig, tokenReduction: true });
+    assert.ok(strict.messages[0].content.includes('heavily abbreviated'));
+    assert.ok(strict.messages[0].content.includes('answer false'));
+    assert.ok(!chat.buildRequest('body', 'Is this a bill?', chatConfig).messages[0].content.includes('heavily abbreviated'));
+});
+
+test('the template shown on the options page follows the interface language when it is automatic', () => {
+    // The automatic setting follows the criterion, which the options page
+    // cannot know, so the interface language decides what is shown there.
+    assert.equal(templateLanguage('auto', 'zh-CN'), 'zh-CN');
+    assert.equal(templateLanguage('auto', 'zh-TW'), 'zh-CN');
+    assert.equal(templateLanguage('auto', 'en-US'), 'en');
+    assert.equal(templateLanguage('auto', ''), 'en');
+    // An explicit choice always wins over the interface language.
+    assert.equal(templateLanguage('zh-CN', 'en-US'), 'zh-CN');
+    assert.equal(templateLanguage('en', 'zh-CN'), 'en');
+});
+
+test('the built-in template is shown on the options page and carries the placeholders', () => {
+    const english = chat.getDefaultTemplate('en');
+    const chinese = chat.getDefaultTemplate('zh-CN');
+    for (const placeholder of chat.PLACEHOLDERS) {
+        assert.ok(english.includes(placeholder), `the English template is missing ${placeholder}`);
+        assert.ok(chinese.includes(placeholder), `the Chinese template is missing ${placeholder}`);
+    }
+    // The template is what the model receives, with the placeholders filled in.
+    const payload = chat.buildRequest('body', 'Is this a bill?', chatConfig);
+    assert.ok(!payload.messages[0].content.includes('%'), 'no placeholder is left in the request');
+    assert.ok(payload.messages[0].content.includes('Classification Criteria:'));
+    assert.ok(payload.messages[0].content.includes('with 1 element(s)'));
+});
+
+test('a custom system prompt replaces the built-in template', () => {
+    const custom = 'Answer the question.\n%CRITERIA%';
+    const payload = chat.buildRequest('body', 'Is this a bill?', { ...chatConfig, customSystemPrompt: custom });
+    assert.ok(payload.messages[0].content.startsWith('Answer the question.'), 'the custom text leads');
+    assert.ok(payload.messages[0].content.includes('1. Is this a bill?'), 'the criteria are still there');
+    assert.ok(!payload.messages[0].content.includes('You are an email-classification assistant.'));
+    // A custom template without the placeholder still gets the criteria, so
+    // a criterion can never be lost.
+    const bare = chat.buildRequest('body', 'Is this a bill?', { ...chatConfig, customSystemPrompt: 'Answer it.' });
+    assert.ok(bare.messages[0].content.includes('1. Is this a bill?'));
+    // An empty custom prompt falls back to the built-in template.
+    const built = chat.buildRequest('body', 'Is this a bill?', chatConfig);
+    assert.ok(built.messages[0].content.includes('You are an email-classification assistant.'));
+    assert.ok(built.messages[0].content.includes('1. Is this a bill?'));
 });
 
 test('auto follows the criterion language, not the body or the UI locale', () => {
@@ -205,14 +265,24 @@ test('a Chinese criterion produces a Chinese prompt and asks for a Chinese reaso
     const payload = chat.buildRequest('正文内容', '这封邮件需要我尽快回复吗？', chatConfig);
     assert.ok(payload.messages[0].content.includes('你是一个邮件分类助手。'));
     assert.ok(payload.messages[0].content.includes('reason 请使用与分类标准相同的语言撰写。'));
-    assert.equal(payload.messages[1].content, '**邮件内容**\n```\n正文内容\n```\n分类标准：这封邮件需要我尽快回复吗？');
+    assert.ok(payload.messages[0].content.includes('分类标准：\n1. 这封邮件需要我尽快回复吗？'));
+    assert.equal(payload.messages[1].content, '**邮件摘要**\n```\n正文内容\n```');
 });
 
 test('SystemOne instructions follow the criterion language', () => {
     const english = systemone.buildRequest('state', 'Is this a bill?', { ...CONFIG_DEFAULTS, promptLanguage: 'auto' });
-    assert.equal(english.questions.match.instructions, 'Does this email satisfy the following criterion: Is this a bill?');
+    assert.match(english.questions.match.instructions, /^Does this email satisfy the following criterion: Is this a bill\?/);
+    assert.match(english.questions.match.instructions, /provided as a summary/);
     const chinese = systemone.buildRequest('state', '这封邮件是账单吗？', { ...CONFIG_DEFAULTS, promptLanguage: 'auto' });
-    assert.equal(chinese.questions.match.instructions, '这封邮件是否满足以下分类标准：这封邮件是账单吗？');
+    assert.match(chinese.questions.match.instructions, /^这封邮件是否满足以下分类标准：这封邮件是账单吗？/);
+    assert.match(chinese.questions.match.instructions, /摘要形式/);
+});
+
+test('the strict SystemOne instruction asks for a low probability when the evidence is thin', () => {
+    const strict = systemone.buildRequest('state', 'Is this a bill?', { ...CONFIG_DEFAULTS, tokenReduction: true });
+    assert.match(strict.questions.match.instructions, /probability of 0/);
+    const chinese = systemone.buildRequest('state', '这封邮件是账单吗？', { ...CONFIG_DEFAULTS, tokenReduction: true });
+    assert.match(chinese.questions.match.instructions, /接近 0 的概率/);
 });
 
 test('an unknown prompt language is rejected', () => {
@@ -224,24 +294,34 @@ test('an unknown prompt language is rejected', () => {
 // Cache fingerprint stability
 // ---------------------------------------------------------------------------
 
-// The request construction as it was before 4.2.0. Used to prove that the
-// cache key of an existing installation is unchanged.
-const LEGACY_SYSTEM_PREFIX = `You are an email-classification assistant.
-Read the email below and the classification criterion provided by the user.
-`;
-const LEGACY_DEFAULT_PROMPT = "Determine whether the email satisfies the user's criterion.";
-const LEGACY_SYSTEM_SUFFIX = `
-Return ONLY a JSON object on a single line of the form:
-{"match": true, "reason": "<short explanation>"} - if the email satisfies the criterion
-{"match": false, "reason": "<short explanation>"} - otherwise
+// The request construction as it is now. Used to prove that the cache key of
+// an installation is stable.
+const SUMMARY_SYSTEM_TEMPLATE = `You are an email-classification assistant.
+Read the email summary below and the classification criteria provided by the user.
+The summary lists the metadata of the message (the lines subject, date, from, to and cc), the file names of the attachments, and three excerpts of the body: the beginning, the middle and the end. The complete body text and the attachment contents are not included, so judge each criterion from the metadata and the excerpts. Content that is missing from an excerpt is not proof that it is missing from the email.
+%CRITERIA%
+%STRICT%
+Return ONLY a JSON array on a single line, with %COUNT% element(s) — one for each criterion, each naming the criterion it belongs to with the number given above:
+[%EXAMPLE%]
 
-Do not add any other keys, text, or formatting.`;
+Every criterion must appear exactly once, identified by its number. Do not add any other keys, text, or formatting.`;
 
-function legacyBuildRequest(text, criterion, config) {
+function summaryBuildRequest(text, criterion, config) {
+    const criteriaArray = Array.isArray(criterion) ? criterion : [criterion];
+    const list = criteriaArray.map((c, i) => `${i + 1}. ${c}`).join('\n');
+    const example = criteriaArray.slice(0, 3).map((c, i) =>
+        `{"index": ${i + 1}, "match": ${i === 0 ? 'true' : 'false'}, "reason": "<reason>"}`).join(', ');
+    const template = config.customSystemPrompt || SUMMARY_SYSTEM_TEMPLATE;
+    const system = template
+        .replaceAll('%CRITERIA%', `\nClassification Criteria:\n${list}`)
+        .replaceAll('%STRICT%', '')
+        .replaceAll('%COUNT%', String(criteriaArray.length))
+        .replaceAll('%EXAMPLE%', example)
+        .replace(/\n{3,}/g, '\n\n');
     const payload = {
         messages: [
-            { role: 'system', content: LEGACY_SYSTEM_PREFIX + (config.customSystemPrompt || LEGACY_DEFAULT_PROMPT) + LEGACY_SYSTEM_SUFFIX },
-            { role: 'user', content: `**Email Contents**\n\`\`\`\n${text}\n\`\`\`\nClassification Criterion: ${criterion}` }
+            { role: 'system', content: system },
+            { role: 'user', content: `**Email Summary**\n\`\`\`\n${text}\n\`\`\`` }
         ], ...config.aiParams
     };
     if (config.model) payload.model = config.model;
@@ -265,7 +345,7 @@ globalThis.messenger = { storage: { local: { async get() { return {}; }, async s
     messages: { async get(id) { return { headerMessageId: `mail-${id}` }; } } };
 const classifier = await import('../modules/AiClassifier.js');
 
-test('the cache key of an English installation is unchanged by 4.2.0', async () => {
+test('the cache key of an English installation is stable', async () => {
     const snapshot = { ...chatConfig, customSystemPrompt: '', model: 'gpt-test' };
     const criterion = 'Is this a bill?';
     const id = 42;
@@ -273,7 +353,7 @@ test('the cache key of an English installation is unchanged by 4.2.0', async () 
     const fingerprint = {
         backend: snapshot.apiType,
         endpoint: classifier.buildEndpointUrl(snapshot.endpoint, snapshot.apiType),
-        request: legacyBuildRequest('', criterion, snapshot),
+        request: summaryBuildRequest('', criterion, snapshot),
         organization: snapshot.openaiOrganization,
         project: snapshot.openaiProject,
         preprocessing: Object.fromEntries(
@@ -282,9 +362,16 @@ test('the cache key of an English installation is unchanged by 4.2.0', async () 
         )
     };
     const messageHash = await sha256(`mail-${id}`);
-    const legacyKey = `v2:${messageHash}:${await sha256(JSON.stringify(stable(fingerprint)))}`;
+    const expectedKey = `v4:${messageHash}:${await sha256(JSON.stringify(stable(fingerprint)))}`;
 
-    assert.equal(await classifier.buildCacheKey(id, criterion, snapshot), legacyKey);
+    assert.equal(await classifier.buildCacheKey(id, criterion, snapshot), expectedKey);
+});
+
+test('the strict mode has its own cache entries', async () => {
+    const snapshot = { ...chatConfig, customSystemPrompt: '', model: 'gpt-test' };
+    const normal = await classifier.buildCacheKey(1, 'Is this a bill?', snapshot);
+    const strict = await classifier.buildCacheKey(1, 'Is this a bill?', { ...snapshot, tokenReduction: true });
+    assert.notEqual(normal, strict, 'a strict request must not reuse a normal entry');
 });
 
 test('the prompt language reaches the fingerprint only through the request', async () => {

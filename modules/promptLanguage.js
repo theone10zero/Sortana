@@ -30,3 +30,21 @@ export function resolvePromptLanguage(config, criterion) {
     if (preference === 'en') return 'en';
     return containsHan(criterion) ? 'zh-CN' : 'en';
 }
+
+/**
+ * The language of the template the options page shows.
+ *
+ * The automatic setting follows the criterion, which the options page cannot
+ * know, so the interface language is the closest match there. A user with a
+ * Chinese Thunderbird therefore starts from the Chinese template instead of
+ * the English one.
+ *
+ * @param {string} promptLanguage 'auto', 'zh-CN' or 'en'
+ * @param {string} uiLocale the locale of the interface, e.g. 'zh-CN'
+ * @returns {'zh-CN'|'en'}
+ */
+export function templateLanguage(promptLanguage, uiLocale) {
+    if (promptLanguage === 'zh-CN') return 'zh-CN';
+    if (promptLanguage === 'en') return 'en';
+    return String(uiLocale || '').toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
+}

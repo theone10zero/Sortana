@@ -13,6 +13,12 @@ The options page stores a base URL and shows the resolved request URL.
 ## Features
 
 - **Configurable endpoint** – set the classification service base URL on the options page.
+- **Email summaries, not full messages** – classification requests carry the metadata
+  (subject, date, sender, recipients), the attachment file names and three excerpts of
+  the body instead of the complete mail. The amount of text is bounded by a
+  configurable character budget.
+- **Strict mode** – compress the summary further and let missing evidence count as a
+  non-match instead of a guess.
 - **Localized interface** – the add-on follows Thunderbird's display language.
   English, Simplified Chinese and Traditional Chinese ship in the box.
 - **Model selection** – load available models from the endpoint and choose one (or omit the model field).
@@ -21,7 +27,7 @@ The options page stores a base URL and shows the resolved request URL.
   both API types. Leave it blank for endpoints that need no authentication.
 - **Optional OpenAI auth headers** – add organization/project headers when the
   endpoint is OpenAI-hosted. These apply to Chat Completions only.
-- **Custom system prompts** – tailor the instructions sent as the system message for more precise results.
+- **Editable system prompt** – the options page shows the built-in system message, the exact text the model receives. Edit it, or restore the default with one click. The placeholders `%CRITERIA%`, `%STRICT%`, `%COUNT%` and `%EXAMPLE%` are filled in for every request.
 - **Persistent result caching** – classification results and reasoning are saved to disk so messages aren't re-evaluated across restarts.
 - **Advanced parameters (Chat Completions)** – tune generation settings like temperature, top‑p and more from the options page.
   Provider-specific advanced fields are forwarded as configured and may be rejected by strict OpenAI endpoints.
@@ -44,15 +50,70 @@ The options page stores a base URL and shows the resolved request URL.
 - **Icon generation scripts** – `resources/svg2img.ps1` (PowerShell) or `resources/svg2img.sh` (bash) regenerate themed PNG icons from the SVG sources.
 - **Maintenance tab** – view rule counts, cache entries and clear cached results from the options page.
 
+### What is sent to the AI service
+
+Sortana does not send the mail. It sends a **summary** of it, because a
+classification only needs to recognise what kind of mail this is:
+
+```
+subject: 项目周报 2026-10-20
+date: Mon, 20 Oct 2026 09:30:00 +0800
+from: 张三 <zhangsan@example.com>
+to: me@example.com
+
+attachments (1):
+- 周报.pdf (application/pdf, 245760 bytes)
+
+body (excerpt, 1843 of 41230 chars):
+[begin]
+...
+[... omitted 30000 chars ...]
+[middle]
+...
+[end]
+...
+```
+
+- The metadata that decides a classification is kept: subject, date, sender and
+  recipients. Every other header is dropped.
+- Attachments contribute their **file name**. Their content is never read, and
+  the images are never sent.
+- The body is cut into three excerpts — the beginning, the middle and the end —
+  and every gap is marked. The complete body is only sent when it fits into the
+  budget.
+- Each of `to` and `cc` lists at most 8 addresses. Duplicate addresses are
+  collapsed, and your own address (the account the mail was delivered to) is
+  always retained even when the list is truncated; the rest are replaced by
+  `... (+N more)`.
+
+The **Summary character limit** in the Advanced panel bounds the whole summary.
+Raise it to see more of a long mail, lower it to save tokens.
+
+**Strict mode** (the former *aggressive token reduction*) compresses the
+summary further: shorter metadata, file names without their type and size, and
+at most eight of them. It also makes the verdict conservative — if the summary
+does not clearly support the criterion, the mail is not matched. A rule that
+depends on a paragraph in the middle of a long mail therefore stops matching
+once that paragraph is cut away.
+
 ### Cache Storage
 
-Classification results are stored under `aiCache` using version 2 entries. Keys
+Classification results are stored under `aiCache` using version 4 entries. Keys
 combine a hashed Message-ID with a fingerprint of the criterion, backend,
 endpoint, selected model, effective request settings, and preprocessing settings.
 Credentials and thresholds are excluded. SystemOne probabilities are retained at
 full precision; changing a threshold reuses the evidence without another request.
 Changing inference settings requires a fresh classification. If the model behind
 an unchanged server/model alias changes, clear the cache manually.
+
+**Version 4.3.0 upgrade note:** the cached results of earlier versions are
+discarded, because the email summary replaced the full message text and the
+prompts changed with it. A classification belongs to the exact request that
+produced it, so the old evidence no longer describes what would be sent now.
+Settings and rules are retained, and the mails are classified again on the next
+run. Because the input is now a summary rather than the full mail, a decision
+model may report different probabilities — re-check your match threshold against
+a set of labelled mails.
 
 **Version 4.0.0 upgrade note:** legacy cache entries and `aiReasonCache` are discarded because
 they do not identify the inference configuration. Settings and rules are retained.
@@ -93,7 +154,13 @@ llama-server -hf ggml-org/Laya-GGUF
 uncached criteria for an email in one request, with the email state included once.
 Turn it off to set **Rules per request** (initially 8); use 1 for sequential
 requests. The number is retained while disabled. These controls apply only to
-SystemOne; Chat Completions continues processing one rule per request.
+SystemOne.
+
+**Chat Completions batching:** Chat Completions sends all eligible, uncached rules
+of an email in one request as well. The rules are listed as a numbered set in the
+system message, and the email summary is the entire user message, so a line of the
+mail can never be read as an instruction. Every answer names the rule it belongs
+to, so the results stay correct even when the model answers out of order.
 
 Cached rules consume no batch capacity, and identical criteria share a question
 while retaining their individual thresholds. Actions execute in rule order and
@@ -101,28 +168,40 @@ honor stop-after-match. A batch can evaluate later rules whose actions are then
 skipped; their probabilities remain available in Details. No further batches are
 requested after stopping. Changing batch settings preserves existing cached results.
 
-If any requested answer is missing or invalid, the entire batch fails without
-caching its new answers or executing their actions. Previously completed actions
-remain applied. Sortana does not automatically retry or split rejected batches;
-if the server rejects a large request, disable Process all and reduce Rules per
-request. Limits and performance depend on the server and model.
+If any requested answer is missing or invalid, the entire SystemOne batch fails
+without caching its new answers or executing their actions. Previously completed
+actions remain applied. Sortana does not automatically retry or split rejected
+batches; if the server rejects a large request, disable Process all and reduce
+Rules per request. Limits and performance depend on the server and model.
+
+Chat Completions is more forgiving, because a model does not always answer every
+rule: it is asked again for the rules it skipped, using a shorter list that keeps
+the original numbering. A rule that stays unanswered counts as a non-match and is
+not cached, so the next run asks for it again.
 
 Probabilities are model estimates, not guaranteed accuracy. Evaluate thresholds
 against representative labeled emails, including long messages and attachments.
-SystemOne uses the existing text extraction and attachment summaries; it does not
-send attachment binaries or images. Chat prompts and generation settings remain
+SystemOne reads the same email summary as Chat Completions; it does not send
+attachment binaries or images. Chat prompts and generation settings remain
 saved but are inactive for SystemOne. Optional Bearer authentication works with
 both APIs; organization/project headers apply only to Chat Completions.
 
-**Input character limit** applies when aggressive reduction is enabled, independently
-of maximum output tokens. Existing installations inherit their previous effective
-character limit; the default is 3686. Character counts do not guarantee that input
-fits a model's token context or llama-server batch limits. Leave room for question
-instructions and configure the server for the chosen model.
+**Summary character limit** bounds the email summary and always applies,
+independently of the maximum output tokens. Existing installations inherit their
+previous effective character limit; the default is 3686. The budget covers the
+summary only — the instructions and the classification criterion are outside it —
+so character counts do not guarantee that the request fits a model's token
+context or llama-server batch limits. Leave room for the question instructions
+and configure the server for the chosen model.
 
 A request or response-parsing failure stops the remaining rules for that email,
 records an error, and allows the queue to continue with the next email. Failed
 results are never cached. Actions already completed are not rolled back.
+
+A message that is moved or deleted while it is waiting in the queue — by another
+filter, by Sortana itself, or by an expunge — is skipped silently. There is
+nothing left to classify, so it produces no error and no notification. The same
+message is also never processed twice while it is still waiting in the queue.
 
 Upstream: [llama-server SystemOne documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#typesafe-compatible-api-endpoints).
 
@@ -147,13 +226,18 @@ that language, and the model is asked to answer in it.
 
 A few things behave differently for Chinese mail and are worth knowing:
 
-- **Character limits are not token limits.** The *Input character limit* is a
+- **Character limits are not token limits.** The *Summary character limit* is a
   character count. Latin text runs about four characters per token; Chinese runs
   roughly one, so the same number buys a Chinese sender about a quarter of the
   text. The options page shows both readings next to the field. If your model
   truncates Chinese mail sooner than you expect, lower the limit so the
   truncated text is still a complete thought, or raise it and make sure the
   model has the context room.
+- **Chinese mail is summarised too.** The summary keeps the subject, the date,
+  the sender, the recipients, the attachment file names and the beginning,
+  middle and end of the body. The excerpt markers (`[... omitted N chars ...]`)
+  and the summary keys stay in English so that one summary can serve mails of
+  any language.
 - **Threshold expectations differ.** Decision models are often better calibrated
   on English mail. Evaluate your threshold against a set of Chinese examples
   you have labelled yourself rather than trusting the default.

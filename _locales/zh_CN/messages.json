@@ -29,6 +29,9 @@
   "action.reset": {
     "message": "恢复默认"
   },
+  "action.resetPrompt": {
+    "message": "恢复默认提示词"
+  },
   "action.advanced": {
     "message": "高级选项"
   },
@@ -134,6 +137,9 @@
   "settings.systemInstructionsPlaceholder": {
     "message": "请输入系统提示词……"
   },
+  "settings.systemInstructionsHelp": {
+    "message": "这就是发送给模型的 system 消息。%CRITERIA% 替换为带编号的分类标准列表，%STRICT% 替换为严格模式的规则，%COUNT% 替换为标准数量，%EXAMPLE% 替换为一个答案示例。提示词语言为「自动」时，实际发送的语言跟随分类标准的语言；此处显示的是界面语言对应的模板。"
+  },
   "settings.promptLanguage": {
     "message": "提示词语言"
   },
@@ -189,16 +195,16 @@
     "message": "合并连续空白"
   },
   "adv.tokenReduction": {
-    "message": "激进压缩 token"
+    "message": "严格模式（激进压缩）"
   },
   "adv.showDebugTab": {
     "message": "显示调试信息"
   },
   "adv.inputCharLimit": {
-    "message": "输入字符上限"
+    "message": "摘要字符上限"
   },
   "adv.inputCharLimitHelp": {
-    "message": "仅在启用激进压缩时生效。字符数不等于 token 数，请为提示词在模型上下文中留出空间。"
+    "message": "始终生效。该额度约束整个邮件摘要：元数据、附件文件名与正文片段；提示词指令与分类标准不计入其中。字符数不等于 token 数，请为指令在模型上下文中留出空间。"
   },
   "adv.inputCharLimitEstimate": {
     "message": "拉丁文字约 $LATIN$ 个 token，中文约 $HAN$ 个 token。"
@@ -454,6 +460,9 @@
   },
   "error.thresholdRange": {
     "message": "阈值需在 0% 到 100% 之间，字符上限需为正整数。"
+  },
+  "error.inputLimitRange": {
+    "message": "摘要字符上限需为正整数。"
   },
   "error.importFailed": {
     "message": "导入失败：$MESSAGE$"

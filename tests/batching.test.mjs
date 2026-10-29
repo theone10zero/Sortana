@@ -119,16 +119,93 @@ test('clearing or importing during a batch prevents stale cache writes', async (
   }
 });
 
-test('Chat Completions remains lazy and sequential', async () => {
+test('Chat Completions batches all criteria in one request', async () => {
   const snapshot = await setup({ apiType: 'chat-completions' });
   const items = await candidates(3, snapshot);
   globalThis.fetch = async (url, request) => {
     requests.push(JSON.parse(request.body));
-    return { ok: true, json: async () => ({ choices: [{ message: { content: '{"match":true}' } }] }) };
+    return { ok: true, json: async () => ({ choices: [{ message: { content: '[{"index":1,"match":true},{"index":2,"match":true},{"index":3,"match":true}]' } }] }) };
   };
   for await (const value of classifier.classifyRules('state', items, snapshot)) break;
   assert.equal(requests.length, 1);
   assert.ok(Array.isArray(requests[0].messages));
+});
+
+test('Chat Completions asks again for the criteria the model skipped', async () => {
+  const snapshot = await setup({ apiType: 'chat-completions' });
+  const items = await candidates(3, snapshot);
+  globalThis.fetch = async (url, request) => {
+    const body = JSON.parse(request.body);
+    requests.push(body);
+    // The first request answers one criterion only, the second the rest.
+    const content = requests.length === 1
+      ? '[{"index":1,"match":true,"reason":"first"}]'
+      : '[{"index":2,"match":false,"reason":"second"},{"index":3,"match":false,"reason":"third"}]';
+    return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+  };
+  const results = await collect(items, snapshot);
+  assert.equal(requests.length, 2, 'the skipped criteria are asked for again');
+  assert.equal(results.length, 3);
+  assert.deepEqual(results.map(r => r.result.matched), [true, false, false]);
+  assert.deepEqual(results.map(r => r.result.reason), ['first', 'second', 'third']);
+});
+
+test('the answers are matched by their number, not by their position', async () => {
+  const snapshot = await setup({ apiType: 'chat-completions' });
+  const items = await candidates(3, snapshot);
+  globalThis.fetch = async (url, request) => {
+    requests.push(JSON.parse(request.body));
+    // The model answers out of order.
+    const content = '[{"index":3,"match":false,"reason":"third"},{"index":1,"match":true,"reason":"first"},{"index":2,"match":false,"reason":"second"}]';
+    return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+  };
+  const results = await collect(items, snapshot);
+  assert.equal(requests.length, 1, 'every criterion was answered');
+  assert.deepEqual(results.map(r => r.result.reason), ['first', 'second', 'third']);
+  assert.deepEqual(results.map(r => r.result.matched), [true, false, false]);
+});
+
+test('a criterion the model never answered counts as a non-match and is not cached', async () => {
+  const snapshot = await setup({ apiType: 'chat-completions' });
+  const items = await candidates(2, snapshot);
+  globalThis.fetch = async (url, request) => {
+    requests.push(JSON.parse(request.body));
+    // One element for the two criteria, and nothing for the retry.
+    const content = requests.length === 1 ? '[{"index":1,"match":true,"reason":"first"}]' : '[]';
+    return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+  };
+  const results = await collect(items, snapshot);
+  assert.equal(results.length, 2);
+  assert.equal(results[0].result.matched, true);
+  assert.equal(results[1].result.matched, false, 'the unanswered criterion is a non-match');
+  assert.match(results[1].result.reason, /did not answer/);
+  const cached = items.map(item => classifier.getCachedDetails(item.cacheKey, 0.5));
+  assert.ok(cached[0], 'the answered criterion is cached');
+  assert.equal(cached[1], null, 'the unanswered criterion is not cached');
+});
+
+test('a malformed result is treated like a missing one', async () => {
+  const snapshot = await setup({ apiType: 'chat-completions' });
+  const items = await candidates(2, snapshot);
+  globalThis.fetch = async (url, request) => {
+    requests.push(JSON.parse(request.body));
+    return { ok: true, json: async () => ({ choices: [{ message: { content: '[{"index":1,"match":"yes"}]' } }] }) };
+  };
+  const results = await collect(items, snapshot);
+  assert.equal(results.length, 2);
+  assert.equal(results[0].result.matched, false, 'the malformed answer is not trusted');
+  assert.match(results[0].result.reason, /did not answer/);
+});
+
+test('answers without a number fall back to their position', async () => {
+  const snapshot = await setup({ apiType: 'chat-completions' });
+  const items = await candidates(2, snapshot);
+  globalThis.fetch = async (url, request) => {
+    requests.push(JSON.parse(request.body));
+    return { ok: true, json: async () => ({ choices: [{ message: { content: '[{"match":true,"reason":"first"},{"match":false,"reason":"second"}]' } }] }) };
+  };
+  const results = await collect(items, snapshot);
+  assert.deepEqual(results.map(r => r.result.reason), ['first', 'second']);
 });
 
 test('batch settings validate and survive import', async () => {
@@ -156,7 +233,7 @@ test('stop after match skips later actions and batches; all-mode retains later e
       queue: Promise.resolve(), queuedCount: 0, processing: false, currentStart: 0,
       tokenReduction: false, showDebugTab: false, timingStats: {},
       updateActionIcon() {}, updateTimingStats() {}, showTransientIcon() {},
-      buildEmailText() { return 'state'; }, ICONS: { circle: 'circle' },
+      buildEmailSummary() { return 'state'; }, ICONS: { circle: 'circle' },
       logger: { aiLog() {} }, recordError(...args) { errors.push(args); }, ERROR_NOTIFICATION_ID: 'error',
       storage: messenger.storage,
       messenger: { messages: {

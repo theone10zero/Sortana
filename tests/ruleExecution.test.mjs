@@ -40,13 +40,16 @@ function runner({ fail = false, changeSettings = false, rules: customRules = nul
     aiRules: rules, queue: Promise.resolve(), queuedCount: 0, processing: false,
     currentStart: 0, tokenReduction: true, showDebugTab: false, timingStats: {},
     updateActionIcon() {}, updateTimingStats() {}, showTransientIcon() {},
-    buildEmailText() { return 'email contents'; }, ICONS: { circle: 'circle' },
+    buildEmailSummary() { return 'email contents'; }, ICONS: { circle: 'circle' },
     logger: { aiLog() {} }, recordError(...args) { errors.push(args); },
     ERROR_NOTIFICATION_ID: 'error',
     storage: { local: { async set() {} } },
     messenger: {
       messages: {
-        async getFull() { return {}; },
+        async getFull(id) {
+          if (seed.goneOnGetFull) throw gone(id);
+          return {};
+        },
         async get(id) {
           if (changeSettings) {
             rules[0].decisionThreshold = 0.1;
@@ -54,6 +57,7 @@ function runner({ fail = false, changeSettings = false, rules: customRules = nul
           }
           const message = entry(id);
           if (message.gone) throw gone(id);
+          if (seed.headerError) throw new Error(seed.headerError);
           return { tags: [], folder: { accountId: 'account' }, headerMessageId: message.headerMessageId, read: false, date: Date.now() };
         },
         async update(id, action) {
@@ -173,7 +177,7 @@ test('a later rule acts on the new id of a message an earlier rule moved', async
 });
 
 test('a message that disappeared is skipped instead of failing the email', async () => {
-  const { context, actions, errors } = runner({
+  const { context, actions, evaluated, errors } = runner({
     rules: [
       { criterion: 'first', actions: [{ type: 'read', read: true }] },
       { criterion: 'second', actions: [{ type: 'flag', flagged: true }] }
@@ -182,8 +186,70 @@ test('a message that disappeared is skipped instead of failing the email', async
   });
   await vm.runInContext('applyAiRules([1])', context);
   assert.deepEqual(actions, []);
+  assert.deepEqual(evaluated, [], 'a vanished message must not be classified at all');
   assert.deepEqual(errors, [], 'a vanished message must not raise a user facing error');
   assert.equal(context.processing, false);
+});
+
+test('a message that vanished before it could be read is skipped', async () => {
+  const { context, actions, evaluated, errors } = runner({
+    rules: [{ criterion: 'first', actions: [{ type: 'read', read: true }] }],
+    store: { goneOnGetFull: true }
+  });
+  await vm.runInContext('applyAiRules([1])', context);
+  assert.deepEqual(actions, []);
+  assert.deepEqual(evaluated, [], 'a vanished message must not be classified at all');
+  assert.deepEqual(errors, [], 'a vanished message must not raise a user facing error');
+  assert.equal(context.processing, false);
+});
+
+test('the same message queued twice is processed once', async () => {
+  const { context, evaluated } = runner({
+    rules: [{ criterion: 'first', actions: [{ type: 'flag', flagged: true }] }]
+  });
+  await vm.runInContext('applyAiRules([1, 1])', context);
+  assert.equal(evaluated.length, 1, 'a duplicate id must not be classified twice');
+});
+
+test('a message can be applied again once it has been processed', async () => {
+  const { context, evaluated } = runner({
+    rules: [{ criterion: 'first', actions: [{ type: 'flag', flagged: true }] }]
+  });
+  await vm.runInContext('applyAiRules([1])', context);
+  await vm.runInContext('applyAiRules([1])', context);
+  assert.equal(evaluated.length, 2, 'a finished message must not stay blocked');
+});
+
+test('the existing tags survive a header that cannot be read', async () => {
+  const { context, actions, errors } = runner({
+    rules: [{ criterion: 'first', actions: [{ type: 'tag', tagKey: 'new' }] }],
+    store: { headerError: 'the header is unavailable' }
+  });
+  await vm.runInContext('applyAiRules([1])', context);
+  assert.deepEqual(actions, [], 'an unknown tag list must not be written over the existing tags');
+  assert.deepEqual(errors, []);
+});
+
+test('a rule restricted to an account stays out of scope when the header cannot be read', async () => {
+  const { context, evaluated, errors } = runner({
+    rules: [{ criterion: 'first', accounts: ['account'], actions: [{ type: 'flag', flagged: true }] }],
+    store: { headerError: 'the header is unavailable' }
+  });
+  await vm.runInContext('applyAiRules([1])', context);
+  assert.deepEqual(evaluated, [], 'a restricted rule must not act on a message whose scope is unknown');
+  assert.deepEqual(errors, []);
+});
+
+test('a message that cannot be followed after a move is skipped without an error', async () => {
+  const { context, actions, errors, live } = runner({
+    rules: [{ criterion: 'first', actions: [{ type: 'move', folder: 'Archive' }, { type: 'delete' }] }],
+    store: { headerError: 'the header is unavailable' }
+  });
+  await vm.runInContext('applyAiRules([1])', context);
+  assert.deepEqual(actions, []);
+  assert.deepEqual(errors, []);
+  assert.ok(live.get(901), 'the moved message must not be deleted');
+  assert.notEqual(live.get(901)?.gone, true);
 });
 
 test('deleting a message stops the remaining actions on it', async () => {

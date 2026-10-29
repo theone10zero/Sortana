@@ -29,6 +29,9 @@
   "action.reset": {
     "message": "還原為預設值"
   },
+  "action.resetPrompt": {
+    "message": "還原預設提示詞"
+  },
   "action.advanced": {
     "message": "進階選項"
   },
@@ -134,6 +137,9 @@
   "settings.systemInstructionsPlaceholder": {
     "message": "請輸入系統提示詞……"
   },
+  "settings.systemInstructionsHelp": {
+    "message": "這就是傳送給模型的 system 訊息。%CRITERIA% 取代為帶編號的分類標準清單，%STRICT% 取代為嚴格模式的規則，%COUNT% 取代為標準數量，%EXAMPLE% 取代為一個答案範例。提示詞語言為「自動」時，實際傳送的語言跟隨分類標準的語言；此處顯示的是介面語言對應的範本。"
+  },
   "settings.promptLanguage": {
     "message": "提示詞語言"
   },
@@ -189,16 +195,16 @@
     "message": "合併連續空白"
   },
   "adv.tokenReduction": {
-    "message": "積極縮減 token"
+    "message": "嚴格模式（積極縮減）"
   },
   "adv.showDebugTab": {
     "message": "顯示偵錯資訊"
   },
   "adv.inputCharLimit": {
-    "message": "輸入字元上限"
+    "message": "摘要字元上限"
   },
   "adv.inputCharLimitHelp": {
-    "message": "僅在啟用積極縮減時生效。字元數不等於 token 數，請為提示詞在模型內容長度上限中預留空間。"
+    "message": "一律生效。該額度涵蓋整封郵件摘要：中繼資料、附件檔名與正文片段；提示詞指令與分類標準不計入其中。字元數不等於 token 數，請為指令在模型內容長度上限中預留空間。"
   },
   "adv.inputCharLimitEstimate": {
     "message": "拉丁文字約 $LATIN$ 個 token，中文約 $HAN$ 個 token。"
@@ -454,6 +460,9 @@
   },
   "error.thresholdRange": {
     "message": "閾值須介於 0% 到 100% 之間，字元上限須為正整數。"
+  },
+  "error.inputLimitRange": {
+    "message": "摘要字元上限須為正整數。"
   },
   "error.importFailed": {
     "message": "匯入失敗：$MESSAGE$"

@@ -22,10 +22,12 @@ test('adapters preserve chat prompts and isolate SystemOne payloads', () => {
   const config = { ...CONFIG_DEFAULTS, model: 'chosen', customSystemPrompt: 'Custom guidance' };
   const payload = chat.buildRequest('email', 'invoice', config);
   assert.match(payload.messages[0].content, /Custom guidance/);
-  assert.match(payload.messages[1].content, /Classification Criterion: invoice/);
+  assert.match(payload.messages[0].content, /Classification Criteria:\n1\. invoice/);
+  assert.equal(payload.messages[1].content, '**Email Summary**\n```\nemail\n```');
   assert.equal(payload.max_tokens, 4096);
   assert.deepEqual(decision.buildRequest('email', 'invoice', config), {
-    state: 'email', model: 'chosen', questions: { match: { type: 'noul', instructions: 'Does this email satisfy the following criterion: invoice' } }
+    state: 'email', model: 'chosen',
+    questions: { match: { type: 'noul', instructions: 'Does this email satisfy the following criterion: invoice. The email is provided as a summary: metadata, attachment file names and three excerpts of the body.' } }
   });
   assert.equal('model' in decision.buildRequest('email', 'invoice', CONFIG_DEFAULTS), false);
   assert.equal('model' in chat.buildRequest('email', 'invoice', CONFIG_DEFAULTS), false);
@@ -35,8 +37,11 @@ test('parsers validate evidence including zero, one, and malformed answers', () 
   for (const probability of [0, 0.5, 1]) assert.equal(decision.parseResponse(answer(probability)).probability, probability);
   for (const probability of [null, '0.5', -0.1, 1.1, Infinity, NaN]) assert.throws(() => decision.parseResponse(answer(probability)));
   for (const raw of [null, {}, { answers: { other: { type: 'noul', noul: 0.5 } } }, { answers: { match: { type: 'choice', noul: 0.5 } } }]) assert.throws(() => decision.parseResponse(raw));
-  assert.deepEqual(chat.parseResponse({ choices: [{ message: { content: 'text {"match":false} then {"matched":true,"reason":"brace } inside"}' } }] }), { matched: true, reason: 'brace } inside', probability: null });
+  // Chat Completions now returns an array
+  assert.deepEqual(chat.parseResponse({ choices: [{ message: { content: '[{"index":1,"matched":true,"reason":"brace } inside"}]' } }] }), [{ matched: true, reason: 'brace } inside', probability: null }]);
   for (const content of ['', '{broken}', '{"match":"true"}']) assert.throws(() => chat.parseResponse({ choices: [{ message: { content } }] }));
+  // A malformed element leaves the criterion unanswered rather than failing.
+  assert.deepEqual(chat.parseResponse({ choices: [{ message: { content: '[{"match":"true"}]' } }] }), [null]);
   assert.throws(() => chat.parseResponse(null));
 });
 
@@ -85,7 +90,7 @@ test('cache migration, inference reuse, fingerprints, clearing and import', asyn
   const chatKey = await classifier.buildCacheKey(1, 'invoice', chatSnapshot);
   assert.notEqual(await classifier.buildCacheKey(1, 'invoice', { ...chatSnapshot, customSystemPrompt: 'other' }), chatKey);
   assert.notEqual(await classifier.buildCacheKey(1, 'invoice', { ...chatSnapshot, aiParams: { ...snapshot.aiParams, temperature: 1 } }), chatKey);
-  serve({ choices: [{ message: { content: '{"match":false,"reason":"not invoice"}' } }] });
+  serve({ choices: [{ message: { content: '[{"index":1,"match":false,"reason":"not invoice"}]' } }] });
   await classifier.classify('email', 'invoice', { cacheKey: chatKey, snapshot: chatSnapshot });
   assert.equal(calls.at(-1).headers['OpenAI-Organization'], 'org');
   assert.equal(await classifier.getCacheSize(), 2);
@@ -98,6 +103,22 @@ test('cache migration, inference reuse, fingerprints, clearing and import', asyn
   await assert.rejects(transfer.importData({ text: async () => JSON.stringify({ decisionThreshold: 2 }) }, ['settings']));
   await assert.rejects(transfer.importData({ text: async () => JSON.stringify({ aiRules: [{ decisionThreshold: -1 }] }) }, ['rules']));
   await classifier.clearCache();
+});
+
+test('a message that vanished still yields a usable cache key', async () => {
+  const snapshot = classifier.getConfig();
+  const live = globalThis.messenger.messages.get;
+  globalThis.messenger.messages.get = async (id) => { throw new Error(`Message not found: ${id}.`); };
+  try {
+    const key = await classifier.buildCacheKey(9, 'invoice', snapshot);
+    assert.match(key, /^v4:[a-f0-9]{64}:[a-f0-9]{64}$/);
+    assert.equal(await classifier.buildCacheKey(9, 'invoice', snapshot), key);
+  } finally {
+    globalThis.messenger.messages.get = live;
+  }
+  globalThis.messenger.messages.get = async () => { throw new Error('the header is unavailable'); };
+  await assert.rejects(classifier.buildCacheKey(9, 'invoice', snapshot), /the header is unavailable/);
+  globalThis.messenger.messages.get = live;
 });
 
 test('failures remain uncached and snapshots survive configuration changes', async () => {
@@ -152,7 +173,7 @@ test('settings and rule imports retain thresholds and reject invalid caches', as
   for (const [key, value] of Object.entries(settings)) assert.equal(data[key], value);
   assert.deepEqual(data.aiRules, rules);
   const key = await classifier.buildCacheKey(4, 'invoice');
-  assert.equal(classifier.validCacheEntry(key, { version: 2, backend: 'systemone', probability: '0.8', reason: null, messageHash: key.split(':')[1], model: '' }), false);
+  assert.equal(classifier.validCacheEntry(key, { version: 3, backend: 'systemone', probability: '0.8', reason: null, messageHash: key.split(':')[1], model: '' }), false);
 });
 
 test('SystemOne 404 reports endpoint, server message, and compatibility guidance', async () => {

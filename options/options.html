@@ -138,7 +138,14 @@
                 <div class="field">
                     <label class="label" for="system-instructions" data-i18n="settings.systemInstructions">System instructions</label>
                     <div class="control">
-                        <textarea class="textarea" id="system-instructions" rows="4" data-i18n-placeholder="settings.systemInstructionsPlaceholder" placeholder="Enter system instructions..."></textarea>
+                        <textarea class="textarea" id="system-instructions" rows="12" data-i18n-placeholder="settings.systemInstructionsPlaceholder" placeholder="Enter system instructions..."></textarea>
+                    </div>
+                    <p class="help" data-i18n="settings.systemInstructionsHelp">This is the system message the model receives. %CRITERIA% is replaced with the numbered list of criteria, %STRICT% with the strict-mode rule, %COUNT% with the number of criteria and %EXAMPLE% with an example answer.</p>
+                    <div class="control">
+                        <button class="button is-small" id="reset-system-prompt" type="button">
+                            <span class="icon is-small"><img data-icon="reply" data-size="16" src="../resources/img/reply-light-16.png" alt=""></span>
+                            <span data-i18n="action.resetPrompt">Restore default prompt</span>
+                        </button>
                     </div>
                 </div>
 
@@ -222,7 +229,7 @@
                     </div>
                     <div class="field">
                         <label class="checkbox">
-                            <input type="checkbox" id="token-reduction"> <span data-i18n="adv.tokenReduction">Aggressive token reduction</span>
+                            <input type="checkbox" id="token-reduction"> <span data-i18n="adv.tokenReduction">Strict mode (aggressive compression)</span>
                         </label>
                     </div>
                     <div class="field">
@@ -231,9 +238,9 @@
                         </label>
                     </div>
                     <div class="field">
-                        <label class="label" for="input-character-limit" data-i18n="adv.inputCharLimit">Input character limit</label>
+                        <label class="label" for="input-character-limit" data-i18n="adv.inputCharLimit">Summary character limit</label>
                         <input class="input" id="input-character-limit" type="number" min="1" step="1">
-                        <p class="help" data-i18n="adv.inputCharLimitHelp">Applied with aggressive reduction. Characters are not tokens; leave room for instructions within your model's context limit.</p>
+                        <p class="help" data-i18n="adv.inputCharLimitHelp">Always applied. The budget covers the whole email summary: the metadata, the attachment file names and the body excerpts. The instructions and the classification criterion are not part of it. Characters are not tokens; leave room for the instructions within your model's context limit.</p>
                         <p class="help" id="input-char-limit-estimate"></p>
                         <p class="help" data-i18n="adv.inputCharLimitEstimateHint">Chinese text uses roughly one token per character, Latin text roughly four characters per token.</p>
                     </div>

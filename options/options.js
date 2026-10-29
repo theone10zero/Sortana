@@ -5,7 +5,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const dataTransfer = await import(browser.runtime.getURL('options/dataTransfer.js'));
     const { detectSystemTheme } = await import(browser.runtime.getURL('modules/themeUtils.js'));
     const { DEFAULT_AI_PARAMS } = await import(browser.runtime.getURL('modules/defaultParams.js'));
-    const { validateSettings, migratedInputLimit } = await import(browser.runtime.getURL('modules/classificationConfig.js'));
+    const { validateSettings, migratedInputLimit, CONFIG_DEFAULTS } = await import(browser.runtime.getURL('modules/classificationConfig.js'));
+    const chatCompletions = await import(browser.runtime.getURL('modules/backends/chatCompletions.js'));
+    const promptLanguage = await import(browser.runtime.getURL('modules/promptLanguage.js'));
     const { t, applyToDocument, currentLocale } = await import(browser.runtime.getURL('modules/i18n.js'));
     document.documentElement.lang = currentLocale();
     applyToDocument(document);
@@ -137,6 +139,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById(id)?.closest('.field')?.classList.toggle('is-hidden', decision);
         }
         document.getElementById('reset-system').classList.toggle('is-hidden', decision);
+        document.getElementById('reset-system-prompt').classList.toggle('is-hidden', decision);
         updateEndpointPreview();
     }
     apiTypeInput.addEventListener('change', updateApiControls);
@@ -337,17 +340,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tokenReductionToggle = document.getElementById('token-reduction');
     tokenReductionToggle.checked = defaults.tokenReduction === true;
 
-    function tokenSavingEnabled() {
-        return htmlToggle.checked
-            || stripUrlToggle.checked
-            || altTextToggle.checked
-            || collapseWhitespaceToggle.checked
-            || tokenReductionToggle.checked;
-    }
-
     function updatePromptReductionLabel(hasDiff) {
         if (!promptReductionLabel) return;
-        if (!hasDiff || !tokenSavingEnabled() || !lastFullText || !lastPromptText) {
+        // The summary is always shorter than the full message, so the label no
+        // longer depends on a preprocessing toggle being enabled.
+        if (!hasDiff || !lastFullText || !lastPromptText) {
             promptReductionLabel.classList.add('is-hidden');
             return;
         }
@@ -465,13 +462,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateDiffDisplay();
     await fetchModels(storedModel);
 
-    [htmlToggle, stripUrlToggle, altTextToggle, collapseWhitespaceToggle, tokenReductionToggle].forEach(toggle => {
-        toggle.addEventListener('change', () => {
-            updatePromptReductionLabel(!diffContainer.classList.contains('is-hidden'));
-        });
-    });
-
-
     const aiParams = Object.assign({}, DEFAULT_AI_PARAMS, defaults.aiParams || {});
     for (const [key, val] of Object.entries(aiParams)) {
         const el = document.getElementById(key);
@@ -500,22 +490,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         logger.aiLog('failed to list folders', {level:'error'}, e);
     }
 
-    // These are the built-in defaults. Storing an empty customSystemPrompt
-    // makes the adapter fall back to the default for the resolved prompt
-    // language; for English that fallback string is byte-identical to the
-    // value stored before 4.2.0, so existing cache fingerprints are unchanged.
-    const DEFAULT_SYSTEM_EN = 'Determine whether the email satisfies the user\'s criterion.';
-    const DEFAULT_SYSTEM_ZH = '判断这封邮件是否满足用户给出的分类标准。';
+    // The system message is one editable template. The options page shows the
+    // built-in template, so what the user edits is what the model receives.
+    // An empty customSystemPrompt means "use the built-in template", which
+    // follows the language of the criterion.
     const systemBox = document.getElementById('system-instructions');
     function defaultSystemPrompt(language) {
-        return language === 'zh-CN' ? DEFAULT_SYSTEM_ZH : DEFAULT_SYSTEM_EN;
+        return chatCompletions.getDefaultTemplate(promptLanguage.templateLanguage(language, currentLocale()));
     }
     function isDefaultSystemPrompt(value) {
-        return value === DEFAULT_SYSTEM_EN || value === DEFAULT_SYSTEM_ZH;
+        return value === defaultSystemPrompt('en') || value === defaultSystemPrompt('zh-CN');
     }
     systemBox.value = defaults.customSystemPrompt || defaultSystemPrompt(defaults.promptLanguage);
-    document.getElementById('reset-system').addEventListener('click', () => {
+    systemBox.addEventListener('input', markDirty);
+    document.getElementById('reset-system-prompt').addEventListener('click', () => {
         systemBox.value = defaultSystemPrompt(promptLanguageSelect.value);
+        markDirty();
+    });
+    // Reset every setting to its default. The rules and the cached results
+    // belong to the user and are left alone.
+    document.getElementById('reset-system').addEventListener('click', async () => {
+        await storage.local.set({
+            ...CONFIG_DEFAULTS,
+            aiParams: { ...DEFAULT_AI_PARAMS },
+            theme: 'auto',
+            showDebugTab: false
+        });
+        location.reload();
     });
     promptLanguageSelect.addEventListener('change', () => {
         if (isDefaultSystemPrompt(systemBox.value)) {
@@ -1181,9 +1182,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         const debugLogging = debugToggle.checked;
         const htmlToMarkdown = htmlToggle.checked;
-        const invalidThreshold = [...document.querySelectorAll('.decision-threshold'), thresholdInput, inputLimit].find(el => !el.checkValidity());
+        const invalidThreshold = [...document.querySelectorAll('.decision-threshold'), thresholdInput].find(el => !el.checkValidity());
         if (invalidThreshold) {
             settingsError.textContent = t('error.thresholdRange');
+            return;
+        }
+        if (!inputLimit.checkValidity()) {
+            settingsError.textContent = t('error.inputLimitRange');
             return;
         }
         const rules = readRules().filter(r => r.criterion);
@@ -1201,7 +1206,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await storage.local.remove(['templateName', 'customTemplate']);
         await applyTheme(theme);
         try {
-            await AiClassifier.setConfig({ systemOneProcessAll, systemOneBatchSize, apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, promptLanguage, aiParams: aiParamsSave, debugLogging });
+            await AiClassifier.setConfig({ systemOneProcessAll, systemOneBatchSize, apiType, decisionThreshold, inputCharacterLimit, endpoint, model, apiKey, openaiOrganization, openaiProject, customSystemPrompt, promptLanguage, aiParams: aiParamsSave, debugLogging, htmlToMarkdown, stripUrlParams, altTextImages, collapseWhitespace, tokenReduction });
             logger.setDebug(debugLogging);
         } catch (e) {
             logger.aiLog('[options] failed to apply config', {level: 'error'}, e);

@@ -29,6 +29,9 @@
   "action.reset": {
     "message": "Reset to default"
   },
+  "action.resetPrompt": {
+    "message": "Restore default prompt"
+  },
   "action.advanced": {
     "message": "Advanced"
   },
@@ -134,6 +137,9 @@
   "settings.systemInstructionsPlaceholder": {
     "message": "Enter system instructions..."
   },
+  "settings.systemInstructionsHelp": {
+    "message": "This is the system message the model receives. %CRITERIA% is replaced with the numbered list of criteria, %STRICT% with the strict-mode rule, %COUNT% with the number of criteria and %EXAMPLE% with an example answer. With the prompt language set to automatic, the language actually sent follows the language of the criterion; the template shown here is the one for your interface language."
+  },
   "settings.promptLanguage": {
     "message": "Prompt language"
   },
@@ -189,16 +195,16 @@
     "message": "Collapse long whitespace"
   },
   "adv.tokenReduction": {
-    "message": "Aggressive token reduction"
+    "message": "Strict mode (aggressive compression)"
   },
   "adv.showDebugTab": {
     "message": "Show debug information"
   },
   "adv.inputCharLimit": {
-    "message": "Input character limit"
+    "message": "Summary character limit"
   },
   "adv.inputCharLimitHelp": {
-    "message": "Applied with aggressive reduction. Characters are not tokens; leave room for instructions within your model's context limit."
+    "message": "Always applied. The budget covers the whole email summary: the metadata, the attachment file names and the body excerpts. The instructions and the classification criterion are not part of it. Characters are not tokens; leave room for the instructions within your model's context limit."
   },
   "adv.inputCharLimitEstimate": {
     "message": "About $LATIN$ tokens for Latin text, about $HAN$ tokens for Chinese text."
@@ -454,6 +460,9 @@
   },
   "error.thresholdRange": {
     "message": "Enter thresholds from 0% to 100% and a positive whole-number character limit."
+  },
+  "error.inputLimitRange": {
+    "message": "Enter a positive whole-number character limit for the summary."
   },
   "error.importFailed": {
     "message": "Import failed: $MESSAGE$"

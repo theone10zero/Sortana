@@ -14,6 +14,7 @@ const storage = (globalThis.messenger ?? browser).storage;
 
 let logger;
 let AiClassifier;
+let mailDigest = null;
 let i18n = null;
 let aiRules = [];
 let queue = Promise.resolve();
@@ -39,6 +40,10 @@ let showDebugTab = false;
 const ERROR_NOTIFICATION_ID = 'sortana-error';
 const ERROR_ICON_TIMEOUT = 4500;
 const MAX_ERROR_LOG = 50;
+
+// The debug tab compares the full message with the summary that was sent.
+// The comparison is capped so that a huge message cannot stall the diff.
+const DEBUG_TEXT_LIMIT = 20000;
 
 // The UI locale follows Thunderbird's language. Falls back to the message key
 // until modules/i18n.js has been imported.
@@ -85,18 +90,47 @@ function isMessageGone(error) {
     return MESSAGE_GONE_PATTERN.test(String(error?.message || ''));
 }
 
+// Bookkeeping for one email, shared by the success, failure and skip paths.
+async function finishMessage() {
+    processing = false;
+    const elapsed = Date.now() - currentStart;
+    currentStart = 0;
+    updateTimingStats(elapsed);
+    updateActionIcon();
+    try {
+        await storage.local.set({ classifyStats: timingStats });
+    } catch (e) {
+        logger?.aiLog('failed to store the timing stats', { level: 'warn' }, e);
+    }
+}
+
+// The Message-ID header survives a move. Thunderbird reports it as
+// `headerMessageId` and also exposes the raw header, and the two may differ
+// in angle brackets, so both forms are kept for the lookup after a move.
+function headerIdVariants(value) {
+    if (typeof value !== 'string' || !value.trim()) return [];
+    const raw = value.trim();
+    const bare = raw.replace(/^</, '').replace(/>$/, '').trim();
+    return [...new Set(raw === bare ? [raw] : [raw, bare])];
+}
+
 // A moved message keeps its RFC 5322 Message-ID header but is given a new
 // tracker id, so the new id is found by looking that header up in the
 // destination folder.
-async function findMessageId(criteria) {
-    try {
-        const list = await messenger.messages.query(criteria);
-        const found = list?.messages || [];
-        return found.length ? found[0].id : null;
-    } catch (e) {
-        logger?.aiLog('failed to re-resolve a moved message', { level: 'warn' }, e);
-        return null;
+async function findMessageId(criteria, headerMessageIds = []) {
+    const ids = Array.isArray(headerMessageIds) ? headerMessageIds : [headerMessageIds];
+    for (const headerMessageId of ids) {
+        if (!headerMessageId) continue;
+        try {
+            const list = await messenger.messages.query({ ...criteria, headerMessageId });
+            const found = list?.messages || [];
+            if (found.length) return found[0].id;
+        } catch (e) {
+            logger?.aiLog('failed to re-resolve a moved message', { level: 'warn' }, e);
+            return null;
+        }
     }
+    return null;
 }
 
 async function findArchiveFolderId(accountId) {
@@ -338,7 +372,7 @@ function collectText(part, bodyParts, attachments) {
     const body = String(part.body || "");
     if (cd.includes("attachment") || !ct.startsWith("text/")) {
         const name = decodeFilename(cd) || decodeFilename(part.headers?.["content-type"]?.[0] || "");
-        attachments.push(`${name} (${ct}, ${part.size || byteSize(body)} bytes)`);
+        attachments.push({ name, type: ct, size: part.size || byteSize(body) });
     } else if (ct.startsWith("text/html")) {
         const doc = new DOMParser().parseFromString(body, 'text/html');
         if (tokenReduction) {
@@ -397,7 +431,7 @@ function collectRawText(part, bodyParts, attachments) {
     const body = String(part.body || "");
     if (cd.includes("attachment") || !ct.startsWith("text/")) {
         const name = decodeFilename(cd) || decodeFilename(part.headers?.["content-type"]?.[0] || "");
-        attachments.push(`${name} (${ct}, ${part.size || byteSize(body)} bytes)`);
+        attachments.push({ name, type: ct, size: part.size || byteSize(body) });
     } else if (ct.startsWith("text/html")) {
         const doc = new DOMParser().parseFromString(body, 'text/html');
         bodyParts.push(doc.body.textContent || "");
@@ -406,26 +440,68 @@ function collectRawText(part, bodyParts, attachments) {
     }
 }
 
-function buildEmailText(full, applyTransforms = true) {
+// The message reduced to the parts that decide a classification: the
+// metadata that says what the mail is about, the body text and the file
+// names of the attachments. The attachment contents are never read.
+function extractMail(full, applyTransforms = true) {
     const bodyParts = [];
     const attachments = [];
     const collect = applyTransforms ? collectText : collectRawText;
     collect(full, bodyParts, attachments);
-    const headers = Object.entries(full.headers || {})
-        .map(([k, v]) => `${k}: ${decodeMimeWords(v.join(' '))}`)
-        .join('\n');
-    const attachInfo = `Attachments: ${attachments.length}` +
-        (attachments.length ? "\n" + attachments.map(a => ` - ${a}`).join('\n') : "");
-    let combined = `${headers}\n${attachInfo}\n\n${bodyParts.join('\n')}`.trim();
+    let body = bodyParts.join('\n');
     if (applyTransforms && tokenReduction) {
+        // A reply chain repeats whole lines. Left in place they would fill
+        // the excerpt windows with duplicates, so they are removed before
+        // the body is cut into excerpts.
         const seen = new Set();
-        combined = combined.split('\n').filter(l => {
-            if (seen.has(l)) return false;
-            seen.add(l);
+        body = body.split('\n').filter(line => {
+            if (seen.has(line)) return false;
+            seen.add(line);
             return true;
         }).join('\n');
     }
-    return applyTransforms ? sanitizeString(combined) : combined;
+    const raw = full.headers || {};
+    const header = (name) => {
+        const value = raw[name];
+        if (!value) return '';
+        const text = decodeMimeWords(Array.isArray(value) ? value.join(' ') : String(value));
+        return applyTransforms ? sanitizeString(text) : text;
+    };
+    return {
+        headers: {
+            subject: header('subject'),
+            date: header('date'),
+            from: header('from'),
+            to: header('to'),
+            cc: header('cc')
+        },
+        body,
+        attachments
+    };
+}
+
+// The summary that is sent to the AI service. It replaces the full text:
+// the metadata, the attachment file names and three excerpts of the body,
+// sized by the character budget.
+function buildEmailSummary(full, options = {}) {
+    const mail = extractMail(full, true);
+    const digest = mailDigest.buildDigest(mail, options);
+    logger?.aiLog('email summary built', { debug: true }, digest.stats);
+    return digest.text;
+}
+
+// The unaltered message text. Only the debug tab compares it with the
+// summary, so it is not built for every email.
+function buildFullEmailText(full) {
+    const mail = extractMail(full, false);
+    const headers = Object.entries(full.headers || {})
+        .map(([k, v]) => `${k}: ${decodeMimeWords(v.join(' '))}`)
+        .join('\n');
+    const attachInfo = `Attachments: ${mail.attachments.length}` +
+        (mail.attachments.length
+            ? "\n" + mail.attachments.map(a => ` - ${a.name} (${a.type}, ${a.size} bytes)`).join('\n')
+            : "");
+    return `${headers}\n${attachInfo}\n\n${mail.body}`.trim();
 }
 
 function updateTimingStats(elapsed) {
@@ -457,20 +533,45 @@ async function processMessage(id) {
     currentStart = Date.now();
     queuedCount--;
     updateActionIcon();
+    // The addresses this mail was delivered to. Used by the summary builder
+    // so the account's own address is never dropped when the recipient list is
+    // truncated. Populated after reading the headers below.
+    let identities = [];
     try {
-        const full = await messenger.messages.getFull(id);
+        let full = null;
+        try {
+            full = await messenger.messages.getFull(id);
+        } catch (e) {
+            if (!isMessageGone(e)) throw e;
+            // The message was moved or deleted while it was queued. There is
+            // nothing left to classify, and it is not a failure the user has
+            // to act on, so the email is skipped instead of failing.
+            logger?.aiLog('message is no longer available, skipping it', { debug: true }, e);
+            await finishMessage();
+            return;
+        }
         const snapshot = AiClassifier.getConfig();
         const rules = structuredClone(aiRules);
-        const originalText = buildEmailText(full, false);
-        let text = buildEmailText(full);
-        if (tokenReduction) {
-            const limit = snapshot.inputCharacterLimit;
-            if (text.length > limit) {
-                text = text.slice(0, limit);
-            }
+        const limit = snapshot.inputCharacterLimit;
+        // The summary carries the metadata, the attachment file names and
+        // three excerpts of the body. The strict mode (aggressive token
+        // reduction) compresses it further and asks the model to treat
+        // missing evidence as a non-match.
+        let text = buildEmailSummary(full, {
+            budget: limit,
+            strict: snapshot.tokenReduction === true,
+            identities
+        });
+        if (Number.isSafeInteger(limit) && limit > 0 && text.length > limit) {
+            // The summary is sized from the same budget, so this only guards
+            // against a rounding error.
+            text = text.slice(0, limit);
         }
         if (showDebugTab) {
-            await storage.local.set({ lastFullText: originalText, lastPromptText: text });
+            // The debug tab diffs the full message against the summary. A huge
+            // message would make that diff crawl, so the comparison is capped.
+            const fullText = buildFullEmailText(full).slice(0, DEBUG_TEXT_LIMIT);
+            await storage.local.set({ lastFullText: fullText, lastPromptText: text });
         }
         let hdr;
         let currentTags = [];
@@ -483,6 +584,7 @@ async function processMessage(id) {
         // The RFC 5322 Message-ID header survives a move and is used to find
         // the message again in its new folder.
         let headerMessageId = null;
+        let headerMessageIds = [];
         try {
             hdr = await messenger.messages.get(id);
             currentTags = Array.isArray(hdr.tags) ? [...hdr.tags] : [];
@@ -491,16 +593,43 @@ async function processMessage(id) {
             headerMessageId = typeof hdr.headerMessageId === 'string' ? hdr.headerMessageId : null;
             const ids = await messenger.identities.list(accountId);
             identityId = ids[0]?.id || null;
+            identities = ids.map(ident => String(ident?.email ?? '')).filter(Boolean);
         } catch (e) {
-            currentTags = [];
+            if (isMessageGone(e)) {
+                // The message vanished between reading it and reading its
+                // header. Skip it rather than failing the whole email.
+                logger?.aiLog('message is no longer available, skipping it', { debug: true }, e);
+                await finishMessage();
+                return;
+            }
+            // The header could not be read, but the message itself is still
+            // there. Its existing tags stay unknown, so a tag action cannot
+            // replace them with an incomplete list.
+            currentTags = null;
             alreadyRead = false;
             identityId = null;
+            identities = [];
         }
+        if (!headerMessageId) {
+            // The Message-ID header survives a move and can re-locate the
+            // message even when its header could not be read.
+            headerMessageId = full?.headers?.['message-id']?.[0] || null;
+        }
+        headerMessageIds = headerIdVariants(headerMessageId);
 
         const candidates = [];
         for (const [index, rule] of rules.entries()) {
             if (rule.enabled === false) {
                 continue;
+            }
+            if (!hdr) {
+                // The header could not be read, so the account and folder
+                // restrictions cannot be checked. A restricted rule stays out
+                // of scope instead of acting on a message it may not cover.
+                if ((Array.isArray(rule.accounts) && rule.accounts.length) ||
+                    (Array.isArray(rule.folders) && rule.folders.length)) {
+                    continue;
+                }
             }
             if (hdr && Array.isArray(rule.accounts) && rule.accounts.length &&
                 !rule.accounts.includes(hdr.folder.accountId)) {
@@ -525,7 +654,17 @@ async function processMessage(id) {
                     }
                 }
             }
-            const cacheKey = await AiClassifier.buildCacheKey(id, rule.criterion, snapshot);
+            let cacheKey = null;
+            try {
+                cacheKey = await AiClassifier.buildCacheKey(id, rule.criterion, snapshot);
+            } catch (e) {
+                if (!isMessageGone(e)) throw e;
+                // The message was removed while its cache key was computed.
+                // There is nothing left to classify, so the email is skipped.
+                logger?.aiLog('message is no longer available, skipping it', { debug: true }, e);
+                await finishMessage();
+                return;
+            }
             candidates.push({ id: `rule_${index}`, rule, cacheKey });
         }
         for await (const { rule, result: { matched } } of AiClassifier.classifyRules(text, candidates, snapshot)) {
@@ -536,6 +675,12 @@ async function processMessage(id) {
                     if (currentId === null) break;
                     try {
                         if (act.type === 'tag' && act.tagKey) {
+                            // The existing tags are unknown, so writing them
+                            // would drop the tags the message already has.
+                            if (currentTags === null) {
+                                logger?.aiLog('the existing tags are unknown, skipping the tag action', { debug: true });
+                                continue;
+                            }
                             if (!currentTags.includes(act.tagKey)) {
                                 currentTags.push(act.tagKey);
                                 await messenger.messages.update(currentId, { tags: currentTags });
@@ -544,8 +689,8 @@ async function processMessage(id) {
                             await messenger.messages.move([currentId], act.folder);
                             // The move invalidated the id, so look the message
                             // up in its new folder by its Message-ID header.
-                            currentId = headerMessageId
-                                ? await findMessageId({ folder: act.folder, headerMessageId })
+                            currentId = headerMessageIds.length
+                                ? await findMessageId({ folder: act.folder }, headerMessageIds)
                                 : null;
                         } else if (act.type === 'copy' && act.copyTarget) {
                             await messenger.messages.copy([currentId], act.copyTarget);
@@ -561,11 +706,10 @@ async function processMessage(id) {
                         } else if (act.type === 'archive') {
                             await messenger.messages.archive([currentId]);
                             const archiveFolderId = await findArchiveFolderId(accountId);
-                            currentId = headerMessageId
+                            currentId = headerMessageIds.length
                                 ? await findMessageId({
-                                    ...(archiveFolderId ? { folder: archiveFolderId } : { accountId }),
-                                    headerMessageId
-                                })
+                                    ...(archiveFolderId ? { folder: archiveFolderId } : { accountId })
+                                }, headerMessageIds)
                                 : null;
                         } else if (act.type === 'forward' && act.address && identityId) {
                             await browser.compose.beginForward(currentId, { to: [act.address], identityId });
@@ -586,18 +730,10 @@ async function processMessage(id) {
                 }
             }
         }
-        processing = false;
-        const elapsed = Date.now() - currentStart;
-        currentStart = 0;
-        updateTimingStats(elapsed);
-        await storage.local.set({ classifyStats: timingStats });
+        await finishMessage();
         showTransientIcon(ICONS.circle);
     } catch (e) {
-        processing = false;
-        const elapsed = Date.now() - currentStart;
-        currentStart = 0;
-        updateTimingStats(elapsed);
-        await storage.local.set({ classifyStats: timingStats });
+        await finishMessage();
         logger.aiLog("failed to apply AI rules", { level: 'error' }, e);
         recordError(t('bg.errorApplyFailed'), e);
         browser.notifications.create(ERROR_NOTIFICATION_ID, {
@@ -608,6 +744,12 @@ async function processMessage(id) {
         });
     }
 }
+// Ids that are queued but not processed yet. The same message can reach the
+// queue twice (the new-mail listener plus a manual run), and processing it
+// twice would fail the second time, because the first run may have moved or
+// deleted it.
+const pendingMessageIds = new Set();
+
 async function applyAiRules(idsInput) {
     const ids = Array.isArray(idsInput) ? idsInput : [idsInput];
     if (!ids.length) return queue;
@@ -619,9 +761,14 @@ async function applyAiRules(idsInput) {
 
     for (const msg of ids) {
         const id = msg?.id ?? msg;
+        if (pendingMessageIds.has(id)) {
+            logger?.aiLog('message is already queued, skipping the duplicate', { debug: true }, id);
+            continue;
+        }
+        pendingMessageIds.add(id);
         queuedCount++;
         updateActionIcon();
-        queue = queue.then(() => processMessage(id));
+        queue = queue.then(() => processMessage(id)).finally(() => pendingMessageIds.delete(id));
     }
 
     return queue;
@@ -646,6 +793,7 @@ async function clearCacheForMessages(idsInput) {
     ({ detectSystemTheme } = await import(browser.runtime.getURL('modules/themeUtils.js')));
     try {
         AiClassifier = await import(browser.runtime.getURL("modules/AiClassifier.js"));
+        mailDigest = await import(browser.runtime.getURL('modules/mailDigest.js'));
         logger.aiLog("AiClassifier imported", { debug: true });
         const td = await import(browser.runtime.getURL("resources/js/turndown.js"));
         TurndownService = td.default || td.TurndownService;

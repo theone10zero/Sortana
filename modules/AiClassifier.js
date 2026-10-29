@@ -5,6 +5,9 @@ import * as chat from './backends/chatCompletions.js';
 import * as systemone from './backends/systemOne.js';
 const storage = (globalThis.messenger ?? globalThis.browser).storage;
 const adapters = { 'chat-completions': chat, systemone };
+// The reason recorded for a criterion the model did not answer. The result is
+// not cached, so a later run can ask for that criterion again.
+const MISSING_REASON = 'The model did not answer this criterion; treated as a non-match.';
 let config = structuredClone(CONFIG_DEFAULTS);
 let cache = new Map();
 let loaded = false;
@@ -38,11 +41,23 @@ async function hash(value) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
 }
+// The same pattern the rule runner uses. A message that was moved or
+// deleted is gone from Thunderbird's tracker, so its header cannot be read.
+const MESSAGE_GONE_PATTERN = /message not found/i;
+
 async function messageHash(id) {
   const api = globalThis.messenger ?? globalThis.browser;
   if (typeof id === 'number' && api.messages?.get) {
-    const header = await api.messages.get(id);
-    id = header.headerMessageId || id;
+    try {
+      const header = await api.messages.get(id);
+      id = header.headerMessageId || id;
+    } catch (error) {
+      // The message was removed before its cache key could be computed. Such
+      // a key is only reachable for a message that no longer exists, so the
+      // tracker id is a safe stand-in and the lookup must not fail the whole
+      // email with an error the user cannot act on.
+      if (!MESSAGE_GONE_PATTERN.test(String(error?.message || ''))) throw error;
+    }
   }
   return hash(String(id));
 }
@@ -54,15 +69,15 @@ function stable(value) {
 export async function buildCacheKey(id, criterion, snapshot = getConfig()) {
   const fingerprint = {
     backend: snapshot.apiType, endpoint: buildEndpointUrl(snapshot.endpoint, snapshot.apiType),
-    request: adapters[snapshot.apiType].buildRequest('', criterion, snapshot),
+    request: adapters[snapshot.apiType].buildRequest('', [criterion], snapshot),
     organization: snapshot.apiType === 'chat-completions' ? snapshot.openaiOrganization : '',
     project: snapshot.apiType === 'chat-completions' ? snapshot.openaiProject : '',
     preprocessing: Object.fromEntries(['htmlToMarkdown', 'stripUrlParams', 'altTextImages', 'collapseWhitespace', 'tokenReduction', 'inputCharacterLimit'].map(k => [k, snapshot[k]]))
   };
-  return `v2:${await messageHash(id)}:${await hash(JSON.stringify(stable(fingerprint)))}`;
+  return `v4:${await messageHash(id)}:${await hash(JSON.stringify(stable(fingerprint)))}`;
 }
 export function validCacheEntry(key, entry) {
-  return /^v2:[a-f0-9]{64}:[a-f0-9]{64}$/.test(key) && entry?.version === 2 &&
+  return /^v4:[a-f0-9]{64}:[a-f0-9]{64}$/.test(key) && entry?.version === 4 &&
     entry.messageHash === key.split(':')[1] && typeof entry.model === 'string' &&
     (entry.backend === 'systemone'
       ? typeof entry.probability === 'number' && Number.isFinite(entry.probability) && entry.probability >= 0 && entry.probability <= 1 && entry.reason === null
@@ -131,8 +146,13 @@ export async function classify(text, criterion, { cacheKey = null, snapshot = ge
   const adapter = adapters[snapshot.apiType];
   const payload = adapter.buildRequest(text, criterion, snapshot);
   const raw = await sendRequest(payload, snapshot);
-  const entry = { ...adapter.parseResponse(raw), backend: snapshot.apiType,
-    model: typeof raw.model === 'string' ? raw.model : snapshot.model, version: 2,
+  const parsed = adapter.parseResponse(raw);
+  // Chat Completions returns one slot per criterion; a single criterion uses
+  // the first one. An empty slot means the model did not answer.
+  const answer = Array.isArray(parsed) ? parsed[0] : parsed;
+  if (!answer) throw new Error('The model did not answer this criterion.');
+  const entry = { ...answer, backend: snapshot.apiType,
+    model: typeof raw.model === 'string' ? raw.model : snapshot.model, version: 4,
     messageHash: cacheKey?.split(':')[1] };
   if (cacheKey && epoch === generation) {
     cache.set(cacheKey, entry);
@@ -145,50 +165,92 @@ export async function classify(text, criterion, { cacheKey = null, snapshot = ge
 export async function* classifyRules(text, candidates, snapshot = getConfig()) {
   await init();
   validateSettings(snapshot);
-  if (snapshot.apiType !== 'systemone') {
-    for (const candidate of candidates) {
-      const result = await classify(text, candidate.rule.criterion, {
-        cacheKey: candidate.cacheKey, snapshot,
-        threshold: candidate.rule.decisionThreshold ?? snapshot.decisionThreshold
-      });
-      yield { rule: candidate.rule, result };
-    }
-    return;
-  }
-  const limit = snapshot.systemOneProcessAll ? Infinity : snapshot.systemOneBatchSize;
-  // Keep received evidence locally even if persistence is cleared during this run.
+
+  // First pass: collect cached evidence for all candidates.
   const evidence = new Map();
   for (const candidate of candidates) {
-    validateThreshold(candidate.rule.decisionThreshold ?? snapshot.decisionThreshold);
+    const threshold = candidate.rule.decisionThreshold ?? snapshot.decisionThreshold;
+    validateThreshold(threshold);
     const entry = cache.get(candidate.cacheKey);
     if (entry) evidence.set(candidate.cacheKey, entry);
   }
+
+  // For both Chat Completions and SystemOne, batch the uncached criteria.
+  const adapter = adapters[snapshot.apiType];
+  const isSystemOne = snapshot.apiType === 'systemone';
+  const limit = isSystemOne
+    ? (snapshot.systemOneProcessAll ? Infinity : snapshot.systemOneBatchSize)
+    : candidates.length; // Chat Completions: send all at once
+
   for (let index = 0; index < candidates.length; index++) {
     const candidate = candidates[index];
-    if (!evidence.has(candidate.cacheKey)) {
-      const pending = new Map();
-      for (let next = index; next < candidates.length && pending.size < limit; next++) {
-        const item = candidates[next];
-        if (!evidence.has(item.cacheKey) && !pending.has(item.cacheKey)) {
-          pending.set(item.cacheKey, { ...item, criterion: item.rule.criterion });
-        }
-      }
-      const questions = [...pending.values()];
-      const epoch = generation;
-      const raw = await sendRequest(systemone.buildBatchRequest(text, questions, snapshot), snapshot);
-      // Parse the complete batch before accepting any of its evidence.
-      const parsed = systemone.parseBatchResponse(raw, questions);
-      const entries = questions.map((question, i) => [question.cacheKey, {
-        ...parsed[i], backend: snapshot.apiType, version: 2,
-        model: typeof raw.model === 'string' ? raw.model : snapshot.model,
-        messageHash: question.cacheKey.split(':')[1]
-      }]);
-      for (const [key, entry] of entries) evidence.set(key, entry);
-      if (epoch === generation) {
-        for (const [key, entry] of entries) cache.set(key, entry);
-        await saveCache();
+    if (evidence.has(candidate.cacheKey)) {
+      yield { rule: candidate.rule, result: withPolicy(evidence.get(candidate.cacheKey),
+        candidate.rule.decisionThreshold ?? snapshot.decisionThreshold) };
+      continue;
+    }
+
+    // Gather the next batch of uncached criteria.
+    const pending = new Map();
+    for (let next = index; next < candidates.length && pending.size < limit; next++) {
+      const item = candidates[next];
+      if (!evidence.has(item.cacheKey) && !pending.has(item.cacheKey)) {
+        pending.set(item.cacheKey, { ...item, criterion: item.rule.criterion });
       }
     }
+    const questions = [...pending.values()];
+    const criteria = questions.map(q => q.criterion);
+
+    const epoch = generation;
+    let raw;
+    let parsed;
+    if (isSystemOne) {
+      raw = await sendRequest(systemone.buildBatchRequest(text, questions, snapshot), snapshot);
+      parsed = systemone.parseBatchResponse(raw, questions);
+    } else {
+      // The number of each criterion identifies it in the answer.
+      const labels = criteria.map((_, index) => index + 1);
+      raw = await sendRequest(chat.buildRequest(text, criteria, snapshot), snapshot);
+      parsed = chat.parseBatchResponse(raw, criteria, labels);
+      // A model may skip a criterion. Ask again for the ones it left out,
+      // with a shorter list, before treating them as unanswered. The retry
+      // keeps the original numbers so a number still names the same criterion.
+      const missing = parsed.map((value, index) => (value === null ? index : -1)).filter(index => index >= 0);
+      if (missing.length) {
+        const missingCriteria = missing.map(index => criteria[index]);
+        const missingLabels = missing.map(index => labels[index]);
+        aiLog(`Model skipped ${missing.length} of ${criteria.length} criteria; asking again`, { level: 'warn' });
+        const retryRaw = await sendRequest(
+          chat.buildRequest(text, missingCriteria, snapshot, missingLabels), snapshot);
+        const retryParsed = chat.parseBatchResponse(retryRaw, missingCriteria, missingLabels);
+        retryParsed.forEach((value, index) => {
+          if (value) parsed[missing[index]] = value;
+        });
+      }
+    }
+
+    // Parse the complete batch before accepting any of its evidence. A
+    // criterion the model never answered counts as a non-match, and it is not
+    // cached, so a later run can ask for it again.
+    const entries = questions.map((question, i) => ({
+      key: question.cacheKey,
+      answered: parsed[i] !== null,
+      entry: {
+        ...(parsed[i] || { matched: false, reason: MISSING_REASON, probability: null }),
+        backend: snapshot.apiType, version: 4,
+        model: typeof raw.model === 'string' ? raw.model : snapshot.model,
+        messageHash: question.cacheKey.split(':')[1]
+      }
+    }));
+    for (const { key, entry } of entries) evidence.set(key, entry);
+    if (epoch === generation) {
+      // Only evidence the model actually produced is persisted.
+      for (const { key, entry, answered } of entries) {
+        if (answered) cache.set(key, entry);
+      }
+      await saveCache();
+    }
+
     yield { rule: candidate.rule, result: withPolicy(evidence.get(candidate.cacheKey),
       candidate.rule.decisionThreshold ?? snapshot.decisionThreshold) };
   }

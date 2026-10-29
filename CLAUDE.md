@@ -30,6 +30,7 @@ Four layers, each depending only on the one below it:
 | UI | `options/options.html`, `options/options.js`, `options/dataTransfer.js`, `details.html`, `details.js` | Settings/rules editor, import/export, evidence viewer |
 | Orchestration | `background.js` | Message queue, rule eligibility, action execution, runtime message bus |
 | Policy | `modules/AiClassifier.js` | Transport, config snapshot, threshold policy, cache read/write |
+| Summary | `modules/mailDigest.js` | Builds the email summary (metadata, attachment names, body excerpts) that is sent instead of the full message |
 | Adapters | `modules/backends/chatCompletions.js`, `modules/backends/systemOne.js` | Request construction and response parsing only |
 | Cross-cutting | `modules/i18n.js`, `modules/promptLanguage.js`, `_locales/` | UI translations, prompt-language resolution, message catalogs |
 
@@ -51,7 +52,7 @@ The UI language follows Thunderbird's locale; `modules/i18n.js` wraps `browser.i
 
 The **prompt language** is a separate setting (`promptLanguage`: `auto` / `zh-CN` / `en`). `modules/promptLanguage.js` resolves it from the **criterion only** — never from the message body, because the cache fingerprint is computed from `adapter.buildRequest('', criterion, snapshot)` and a body-dependent decision would desynchronise the key from the request actually sent.
 
-**The English templates in the adapters are part of the cache fingerprint.** They must stay byte-for-byte identical to the pre-4.2.0 strings, or every stored classification result becomes unreachable. `tests/i18n.test.mjs` pins the exact legacy request payload and the resulting cache key. Changing an English template requires a deliberate cache version bump.
+**The English templates in the adapters are part of the cache fingerprint.** They must stay byte-for-byte identical to the strings the current cache version was built with, or every stored classification result becomes unreachable. `tests/i18n.test.mjs` pins the exact request payload and the resulting cache key. Changing an English template — or the summary that is sent — requires a deliberate cache version bump.
 
 ### Classification flow
 
@@ -59,7 +60,7 @@ The **prompt language** is a separate setting (`promptLanguage`: `auto` / `zh-CN
 
 1. `applyAiRules(ids)` appends to a serialized promise chain (`queue`) — one message processed at a time, in arrival order.
 2. `processMessage(id)` snapshots config (`AiClassifier.getConfig()`) and clones `aiRules`, so a settings change mid-run cannot affect the email in flight.
-3. `buildEmailText(full)` renders headers + attachment summary + body text; `collectText`/`collectRawText` apply the preprocessing toggles (`htmlToMarkdown`, `stripUrlParams`, `altTextImages`, `collapseWhitespace`, `tokenReduction`).
+3. `buildEmailSummary(full, { budget, strict })` reduces the mail to the summary that is actually sent: the metadata (subject, date, sender, recipients), the attachment file names and three excerpts of the body. Each of `to` and `cc` is capped at 8 addresses; duplicate addresses are collapsed, and the receiving account's own identities are always retained even when the list is truncated, with the remainder replaced by `... (+N more)`. `extractMail()` pulls the parts out of the MIME tree (`collectText`/`collectRawText` apply the preprocessing toggles `htmlToMarkdown`, `stripUrlParams`, `altTextImages`, `collapseWhitespace`, `tokenReduction`), and `modules/mailDigest.js` — a pure module — cuts the body into excerpts and fits everything into the character budget. `buildFullEmailText(full)` renders the unaltered message for the debug tab only.
 4. Eligibility filtering happens *before* any inference: `enabled`, `accounts`, `folders`, `unreadOnly`, `minAgeDays`/`maxAgeDays`.
 5. Each surviving rule gets a cache key via `AiClassifier.buildCacheKey(id, rule.criterion, snapshot)`.
 6. `AiClassifier.classifyRules(text, candidates, snapshot)` is an async iterator. The rule runner consumes it with `for await`, so `stopProcessing` can break out *before* the next request is issued. Actions run inline as each result is yielded.
@@ -73,7 +74,7 @@ The action runner therefore keeps a mutable `currentId`, orders the actions with
 
 ### Cache
 
-Keys are `v2:<sha256(Message-ID)>:<sha256(fingerprint)>`. The fingerprint covers backend, resolved endpoint, the built request, org/project headers, and preprocessing options — deliberately **not** thresholds, secrets, actions, or batch settings, so changing a threshold or batch size reuses evidence while changing inference settings forces a fresh request.
+Keys are `v4:<sha256(Message-ID)>:<sha256(fingerprint)>`. The fingerprint covers backend, resolved endpoint, the built request, org/project headers, and preprocessing options — deliberately **not** thresholds, secrets, actions, or batch settings, so changing a threshold or batch size reuses evidence while changing inference settings forces a fresh request.
 
 `AiClassifier` keeps the cache in an in-memory `Map` mirrored to `storage.local.aiCache`, and a `generation` counter. Any clear, import, or `replaceCache` bumps the counter; in-flight writes compare their captured epoch against it and discard themselves if the cache was replaced underneath them. This is why "clearing the cache during inference" must not repopulate.
 
@@ -81,7 +82,9 @@ Do not change the cache key format or the fingerprint fields — it invalidates 
 
 ### Batch/chat asymmetry
 
-Chat Completions sends one request per rule, sequentially. SystemOne groups uncached criteria into one request (`state` = email text, `questions` = `noul` entries keyed `rule_<snapshot index>`). A batch is validated as a whole before any of it is cached: a single malformed answer fails the entire batch, caches nothing, and executes no actions from it. Cached rules consume no batch capacity, and duplicate criteria share a question while keeping independent thresholds.
+Both backends group the uncached criteria of one email into a single request. Chat Completions sends the criteria as a numbered list in the **system** message and the email summary alone in the user message, and expects one JSON array element per criterion. SystemOne sends the summary as `state` and one `noul` question per criterion, keyed `rule_<snapshot index>`. A batch is validated as a whole before any of it is cached. Cached rules consume no batch capacity, and duplicate criteria keep independent thresholds.
+
+A model does not always answer every criterion. Chat Completions therefore asks again for the criteria it skipped, with a shorter list; a criterion that stays unanswered counts as a non-match and is **not** cached, so a later run can ask for it again. SystemOne keeps its stricter rule: a single malformed answer fails the entire batch, caches nothing, and executes no actions from it.
 
 ### Threshold policy
 
@@ -128,7 +131,7 @@ Markers sent to the model (`__IMG__`, `__BASE64__`) stay ASCII and untranslated 
 - The stored endpoint is a **base URL**. `normalizeEndpointBase` strips a trailing `/v1` or a recognized full API path, preserves proxy prefixes, and defaults to HTTPS when no scheme is given. `buildEndpointUrl` re-appends the adapter's `path`.
 - Model discovery always uses `/v1/models`. Model `None` means the `model` field is omitted entirely, not sent as null.
 - Organization/project headers are sent for Chat Completions only.
-- `inputCharacterLimit` applies to input truncation (with aggressive reduction) and is independent of `max_tokens`; it migrates from the old effective limit via `migratedInputLimit`.
+- `inputCharacterLimit` is the character budget of the email summary, always applies and is independent of `max_tokens`; it migrates from the old effective limit via `migratedInputLimit`.
 - The single-question SystemOne path still uses the key `match` for backward compatibility and cache fingerprinting.
 - Failed results are never cached. `classify()` throws; `classifyText()` is a boolean wrapper.
 - Icons live in `resources/img` in 16/32/64 variants; `browserAction.setIcon`/`messageDisplayAction.setIcon` take a size→path dictionary.
